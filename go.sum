@@ -1,0 +1,4 @@
+gopkg.in/gographics/imagick.v2 v2.6.4 h1:H7UgF2ZAdV85sMB9YU2c6r3dpp9SP4N6UF+bG3OK728=
+gopkg.in/gographics/imagick.v2 v2.6.4/go.mod h1:/QVPLV/iKdNttRKthmDkeeGg+vdHurVEPc8zkU0XgBk=
+rsc.io/pdf v0.1.1 h1:k1MczvYDUvJBe93bYd7wrZLLUEcLZAuF824/I4e5Xr4=
+rsc.io/pdf v0.1.1/go.mod h1:n8OzWcQ6Sp37PL01nO98y4iUCRdTGarVfzxY20ICaU4=
