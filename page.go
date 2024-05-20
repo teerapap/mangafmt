@@ -9,6 +9,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"gopkg.in/gographics/imagick.v2/imagick"
 )
 
@@ -18,38 +20,127 @@ func size(p *Page) Size {
 	return Size{p.GetImageWidth(), p.GetImageHeight()}
 }
 
-func processPage(inputFile string, page int) error {
-	inputFilePage := fmt.Sprintf("%s[%d]", inputFile, page-1)
-	outputFilePage := fmt.Sprintf("%s/page-%02d.png", workDir, page)
+func process(itr **Page, inFile string, inPage *int, inTotal int, outPage *int) error {
+	current := *itr
+	processed := 0
+	if current != nil {
+		defer current.Destroy()
+	} else {
+		current = imagick.NewMagickWand()
+		defer current.Destroy()
+		inFilePage := fmt.Sprintf("%s[%d]", inFile, *inPage-1)
 
-	current := imagick.NewMagickWand()
-	defer current.Destroy()
-
-	// Read page
-	if err := current.SetResolution(float64(density), float64(density)); err != nil {
-		return fmt.Errorf("setting page resolution: %w", err)
+		// Read page
+		if err := current.SetResolution(float64(density), float64(density)); err != nil {
+			return fmt.Errorf("setting page resolution: %w", err)
+		}
+		if err := current.ReadImage(inFilePage); err != nil {
+			return fmt.Errorf("opening input file page: %w", err)
+		}
 	}
-	if err := current.ReadImage(inputFilePage); err != nil {
-		return fmt.Errorf("opening input file page: %w", err)
+	processed += 1
+
+	// Look ahead next page
+	var next *Page
+	if *inPage+1 <= inTotal { // has next page
+		// Read next page
+		next = imagick.NewMagickWand()
+		defer next.Destroy()
+		inFilePage := fmt.Sprintf("%s[%d]", inFile, *inPage)
+
+		// Read page
+		if err := next.SetResolution(float64(density), float64(density)); err != nil {
+			return fmt.Errorf("setting next page resolution: %w", err)
+		}
+		if err := next.ReadImage(inFilePage); err != nil {
+			return fmt.Errorf("opening input file next page: %w", err)
+		}
+
+		// Check if the next page can merge with current page
+		var left *Page = current
+		var right *Page = next
+		if isRTL {
+			left = next
+			right = current
+		}
+		connected, err := ifConnect(left, right)
+		if err != nil {
+			return fmt.Errorf("checking if two pages are connected: %w", err)
+		}
+		if connected {
+			olog.Printf("Connect page %d and %d together\n", *inPage, *inPage+1)
+			// connect two pages
+			if current, err = concatPages(left, right); err != nil {
+				return fmt.Errorf("connecting two pages: %w", err)
+			}
+			defer current.Destroy()
+			processed += 1
+			next = nil
+		}
 	}
 
-	// TODO: Check if the next page can merge with current page
-	// TODO: Merge
+	// Prepare output file
+	err := os.MkdirAll(fmt.Sprintf("%s/Images", workDir), 0750)
+	if err != nil {
+		return fmt.Errorf("creating images directory: %w", err)
+	}
+	outputFilePage := fmt.Sprintf("%s/Images/page-%02d.png", workDir, *outPage)
 
+	if err := postProcessingPage(current, outputFilePage); err != nil {
+		return err
+	}
+
+	*outPage += 1
+	*inPage += processed
+	if next != nil {
+		*itr = next.Clone() // next page will become current in the next process
+	} else {
+		*itr = nil
+	}
+
+	return nil
+}
+
+var firstPage = true
+
+func ifConnect(left *Page, right *Page) (bool, error) {
+	// TODO: Implement connectness checking
+	if firstPage {
+		firstPage = false
+		return false, nil
+	}
+	return true, nil
+}
+
+func concatPages(left *Page, right *Page) (*Page, error) {
+	canvas := imagick.NewMagickWand()
+	defer canvas.Destroy()
+
+	if err := canvas.AddImage(left); err != nil {
+		return nil, fmt.Errorf("connecting left page: %w", err)
+	}
+	if err := canvas.AddImage(right); err != nil {
+		return nil, fmt.Errorf("connecting rigt page: %w", err)
+	}
+	canvas.ResetIterator()
+	return canvas.AppendImages(false), nil
+}
+
+func postProcessingPage(p *Page, outputFilePage string) error {
 	// Trim image with fuzz
-	if err := trimPage(current, 1.0-trimMax, trimFuzz); err != nil {
+	if err := trimPage(p, 1.0-trimMax, trimFuzz); err != nil {
 		return fmt.Errorf("trimming page: %w", err)
 	}
 
 	// Resize page to aspect fit screen
-	if err := resizePage(current, targetSize); err != nil {
+	if err := resizePage(p, targetSize); err != nil {
 		return fmt.Errorf("resizing page to fit to screen: %w", err)
 	}
 
 	// TODO: Convert to grayscale
 
 	// Save as raw image
-	if err := current.WriteImage(outputFilePage); err != nil {
+	if err := p.WriteImage(outputFilePage); err != nil {
 		return fmt.Errorf("writing page to image file: %w", err)
 	}
 	return nil
@@ -72,6 +163,7 @@ func trimPage(p *Page, minSizeFactor float64, fuzz float64) error {
 	}
 
 	trimSize := size(trim)
+	// TODO: Print trim percentage
 	if minSize.CanFitIn(trimSize) {
 		vlog.Printf("Page size %s is trimmed to %s\n", pageSize, trimSize)
 		p.SetImage(trim)

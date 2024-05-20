@@ -26,6 +26,7 @@ var end int
 var trimMax float64
 var trimFuzz float64
 var targetSize Size
+var isRTL bool
 
 func init() {
 	flag.Usage = func() {
@@ -39,6 +40,8 @@ func init() {
 	flag.UintVar(&density, "density", 300, "output density (DPI)")
 	flag.IntVar(&start, "start", 1, "page start. (non-negative means first page)")
 	flag.IntVar(&end, "end", -1, "page end. (non-negative means last page)")
+	flag.BoolVar(&isRTL, "rtl", false, "right-to-left read direction (ex. Japanese manga)")
+	flag.BoolVar(&isRTL, "right-to-left", false, "right-to-left read direction (ex. Japanese manga)")
 	flag.Float64Var(&trimMax, "trim-max", 0.15, "maximum trim percentage (0.0-1.0)")
 	flag.Float64Var(&trimFuzz, "trim-fuzz", 1.0, "trim fuzz")
 	flag.UintVar(&targetSize.width, "width", 1263, "output screen width (pixel)")
@@ -119,7 +122,7 @@ func main() {
 
 	// Get number of pages
 	totalPages := getNumberOfPages(inputFile)
-	olog.Printf("Number of Pages: %d\n", totalPages)
+	olog.Printf("Total Number of Pages: %d\n", totalPages)
 	if end <= 0 {
 		end = totalPages
 	}
@@ -148,10 +151,17 @@ func main() {
 	vlog.Println("Initialized Imagemagick")
 
 	// For loop each page
-	for page := start; page <= end; page += 1 {
-		olog.Printf("Processing page....(%d/%d)", page, totalPages)
-		check(processPage(inputFile, page), fmt.Sprintf("processing page %d", page))
+	var itr *imagick.MagickWand
+	outPage := 1
+	if start != 1 && end != totalPages {
+		olog.Printf("Select page(s) from %d to %d to process. Total %d pages.\n", start, end, end-start+1)
 	}
+	for page := start; page <= end; {
+		olog.Printf("Processing page....(%d/%d)\n", page, end)
+		check(process(&itr, inputFile, &page, end, &outPage), fmt.Sprintf("processing page %d", page))
+		vlog.Printf("next input page = %d, next output page = %d\n", page, outPage)
+	}
+	olog.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, outPage+1)
 
 	// TODO: Packaging
 
