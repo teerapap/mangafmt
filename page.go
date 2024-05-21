@@ -20,7 +20,20 @@ func size(p *Page) Size {
 	return Size{p.GetImageWidth(), p.GetImageHeight()}
 }
 
-func process(itr **Page, inFile string, inPage *int, inTotal int, outPage *int) error {
+func fuzzFromPercent(fp float64) float64 {
+	_, colorRange := imagick.GetQuantumRange()
+	return fp * float64(colorRange)
+}
+
+func numDigits(total int) int {
+	d := 1
+	for ; total >= 10; total = total / 10 {
+		d += 1
+	}
+	return d
+}
+
+func process(itr **Page, bookFile string, pageCount int, curPage *int, lastPage int, outPage *int) error {
 	current := *itr
 	processed := 0
 	if current != nil {
@@ -28,7 +41,7 @@ func process(itr **Page, inFile string, inPage *int, inTotal int, outPage *int) 
 	} else {
 		current = imagick.NewMagickWand()
 		defer current.Destroy()
-		inFilePage := fmt.Sprintf("%s[%d]", inFile, *inPage-1)
+		inFilePage := fmt.Sprintf("%s[%d]", bookFile, *curPage-1)
 
 		// Read page
 		if err := current.SetResolution(float64(density), float64(density)); err != nil {
@@ -42,11 +55,11 @@ func process(itr **Page, inFile string, inPage *int, inTotal int, outPage *int) 
 
 	// Look ahead next page
 	var next *Page
-	if *inPage+1 <= inTotal { // has next page
+	if *curPage+1 <= lastPage { // has next page
 		// Read next page
 		next = imagick.NewMagickWand()
 		defer next.Destroy()
-		inFilePage := fmt.Sprintf("%s[%d]", inFile, *inPage)
+		inFilePage := fmt.Sprintf("%s[%d]", bookFile, *curPage)
 
 		// Read page
 		if err := next.SetResolution(float64(density), float64(density)); err != nil {
@@ -68,7 +81,7 @@ func process(itr **Page, inFile string, inPage *int, inTotal int, outPage *int) 
 			return fmt.Errorf("checking if two pages are connected: %w", err)
 		}
 		if connected {
-			olog.Printf("Connect page %d and %d together\n", *inPage, *inPage+1)
+			olog.Printf("Connect page %d and %d together\n", *curPage, *curPage+1)
 			// connect two pages
 			if current, err = concatPages(left, right); err != nil {
 				return fmt.Errorf("connecting two pages: %w", err)
@@ -84,14 +97,15 @@ func process(itr **Page, inFile string, inPage *int, inTotal int, outPage *int) 
 	if err != nil {
 		return fmt.Errorf("creating images directory: %w", err)
 	}
-	outputFilePage := fmt.Sprintf("%s/Images/page-%02d.png", workDir, *outPage)
+	fileFmt := fmt.Sprintf("%%s/Images/page-%%0%dd", numDigits(pageCount))
+	outFilePage := fmt.Sprintf(fileFmt, workDir, *outPage)
 
-	if err := postProcessingPage(current, outputFilePage); err != nil {
+	if err := postProcessingPage(current, outFilePage); err != nil {
 		return err
 	}
 
+	*curPage += processed
 	*outPage += 1
-	*inPage += processed
 	if next != nil {
 		*itr = next.Clone() // next page will become current in the next process
 	} else {
@@ -101,15 +115,9 @@ func process(itr **Page, inFile string, inPage *int, inTotal int, outPage *int) 
 	return nil
 }
 
-var firstPage = true
-
 func ifConnect(left *Page, right *Page) (bool, error) {
 	// TODO: Implement connectness checking
-	if firstPage {
-		firstPage = false
-		return false, nil
-	}
-	return true, nil
+	return false, nil
 }
 
 func concatPages(left *Page, right *Page) (*Page, error) {
@@ -126,9 +134,9 @@ func concatPages(left *Page, right *Page) (*Page, error) {
 	return canvas.AppendImages(false), nil
 }
 
-func postProcessingPage(p *Page, outputFilePage string) error {
+func postProcessingPage(p *Page, outFilePage string) error {
 	// Trim image with fuzz
-	if err := trimPage(p, 1.0-trimMax, trimFuzz); err != nil {
+	if err := trimPage(p, 1.0-trimMaxP, fuzzP, bgColor, outFilePage); err != nil {
 		return fmt.Errorf("trimming page: %w", err)
 	}
 
@@ -140,36 +148,81 @@ func postProcessingPage(p *Page, outputFilePage string) error {
 	// TODO: Convert to grayscale
 
 	// Save as raw image
-	if err := p.WriteImage(outputFilePage); err != nil {
+	outFile := fmt.Sprintf("%s.png", outFilePage)
+	if err := p.WriteImage(outFile); err != nil {
 		return fmt.Errorf("writing page to image file: %w", err)
 	}
 	return nil
 }
 
-func trimPage(p *Page, minSizeFactor float64, fuzz float64) error {
+func trimPage(p *Page, minSizeP float64, fuzzP float64, bgColor string, outFile string) error {
 	// Trim image with fuzz
-
 	pageSize := size(p)
-	minSize := pageSize.ScaleBy(minSizeFactor)
+	minSize := pageSize.ScaleBy(minSizeP)
 
-	trim := p.Clone()
-	defer trim.Destroy()
-
-	if err := trim.SetGravity(imagick.GRAVITY_CENTER); err != nil {
-		return fmt.Errorf("setting trim gravity: %w", err)
+	// write tmp file
+	tmpFile := fmt.Sprintf("%s.trimming.png", outFile)
+	if err := p.WriteImage(tmpFile); err != nil {
+		return fmt.Errorf("writing tmp file for trimming: %w", err)
 	}
-	if err := trim.TrimImage(fuzz); err != nil {
-		return fmt.Errorf("trimming page: %w", err)
+	defer os.Remove(tmpFile)
+
+	// finding trim box
+	ret, err := imagick.ConvertImageCommand([]string{
+		"convert",
+		tmpFile,
+		"-bordercolor", bgColor, // guiding border so that it trims only specified background color
+		"-border", "1",
+		"-fuzz", fmt.Sprintf("%.0f%%", fuzzP),
+		"-format", "%@",
+		"info:",
+	})
+	if err != nil {
+		return fmt.Errorf("finding trim box: %w", err)
 	}
 
-	trimSize := size(trim)
-	// TODO: Print trim percentage
-	if minSize.CanFitIn(trimSize) {
-		vlog.Printf("Page size %s is trimmed to %s\n", pageSize, trimSize)
-		p.SetImage(trim)
+	var tSize, tOffset Size
+	if _, err := fmt.Sscanf(ret.Meta, "%dx%d+%d+%d", &(tSize.width), &(tSize.height), &(tOffset.width), &(tOffset.height)); err != nil {
+		return fmt.Errorf("parsing trim box %s: %w", ret.Meta, err)
+	}
+	tOffset.TranslateBy(-1, -1) // compensate trim guide border
+	// TODO: Add margin
+	vlog.Printf("trim box: %s+%d+%d\n", tSize, tOffset.width, tOffset.height)
+
+	if tSize == pageSize { // trim box equals page size
+		vlog.Printf("No trimming needed\n")
 		return nil
 	}
-	olog.Printf("Page size %s is trimmed to %s but it is smaller than minimum size %s - skip trimming\n", pageSize, trimSize, minSize)
+
+	if !minSize.CanFitIn(tSize) {
+		// smaller than min size after trimmed
+		otSize := tSize
+
+		// expand trim size in each dimension to reach minimum size
+		expand := func(cur uint, off uint, mn uint, mx uint) (uint, uint) {
+			if cur >= mn {
+				return cur, off
+			}
+			gap := mn - cur
+			leftover := uint(max(0, int(gap/2)-int(mx-(off+cur))))
+			return mn, off - min(off, (gap/2)+leftover)
+		}
+		tSize.width, tOffset.width = expand(tSize.width, tOffset.width, minSize.width, pageSize.width)
+		tSize.height, tOffset.height = expand(tSize.height, tOffset.height, minSize.height, pageSize.height)
+
+		olog.Printf("Page size %s is trimmed to %s but it is smaller than minimum size %s - expanding trim box to minimum %s\n", pageSize, otSize, minSize, tSize)
+	}
+
+	// Crop based on trim size
+	if err := p.CropImage(tSize.width, tSize.height, int(tOffset.width), int(tOffset.height)); err != nil {
+		return fmt.Errorf("trimming page with %s+%d+%d: %w", tSize, tOffset.width, tOffset.height, err)
+	}
+
+	// Print trim info
+	tWidthP := float64(tSize.width) * 100.0 / float64(pageSize.width)
+	tHeightP := float64(tSize.height) * 100.0 / float64(pageSize.height)
+	olog.Printf("Page size %s is trimmed to %s (%.2f%% | %.2f%%)\n", pageSize, tSize, tWidthP, tHeightP)
+
 	return nil
 }
 
@@ -180,7 +233,7 @@ func resizePage(p *Page, screen Size) error {
 	scrOrient := screen.Orientation()
 	if pgOrient != Square && pgOrient != scrOrient {
 		// rotate counter-clockwise
-		olog.Printf("Rotating page because page orientation (%s) does not match screen orientation (%s)\n", pgOrient, scrOrient)
+		olog.Printf("Rotating page because page orientation %s (%s) does not match screen orientation (%s)\n", pageSize, pgOrient, scrOrient)
 		pw := imagick.NewPixelWand()
 		defer pw.Destroy()
 		if err := p.RotateImage(pw, 270); err != nil {

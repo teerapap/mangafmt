@@ -23,10 +23,11 @@ var workDir string
 var density uint
 var start int
 var end int
-var trimMax float64
-var trimFuzz float64
+var trimMaxP float64
+var fuzzP float64
 var targetSize Size
 var isRTL bool
+var bgColor string
 
 func init() {
 	flag.Usage = func() {
@@ -42,9 +43,10 @@ func init() {
 	flag.IntVar(&end, "end", -1, "page end. (non-negative means last page)")
 	flag.BoolVar(&isRTL, "rtl", false, "right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&isRTL, "right-to-left", false, "right-to-left read direction (ex. Japanese manga)")
-	flag.Float64Var(&trimMax, "trim-max", 0.15, "maximum trim percentage (0.0-1.0)")
-	flag.Float64Var(&trimFuzz, "trim-fuzz", 1.0, "trim fuzz")
-	flag.UintVar(&targetSize.width, "width", 1263, "output screen width (pixel)")
+	flag.StringVar(&bgColor, "background", "white", "background color")
+	flag.Float64Var(&fuzzP, "fuzz", 0.1, "color fuzz percentage (0.0-1.0)")
+	flag.Float64Var(&trimMaxP, "trim-max", 0.15, "maximum trim percentage (0.0-1.0)")
+	flag.UintVar(&targetSize.width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.height, "height", 1680, "output screen heigt (pixel)")
 }
 
@@ -76,27 +78,28 @@ func handleExit() {
 	}
 }
 
-func createWorkDir(path string, clean bool) (string, bool, error) {
-	if path == "" {
+func createWorkDir(path *string, clean bool) (bool, error) {
+	if *path == "" {
 		// create temp directory
 		tmpDir, err := os.MkdirTemp("", "mangafmt-")
 		if err != nil {
-			return "", true, fmt.Errorf("creating temp directory: %w", err)
+			return true, fmt.Errorf("creating temp directory: %w", err)
 		}
-		return tmpDir, true, nil
+		*path = tmpDir
+		return true, nil
 	} else {
 		if clean {
 			// clean existing directory
-			err := os.RemoveAll(path)
+			err := os.RemoveAll(*path)
 			if err != nil {
-				return path, false, fmt.Errorf("removing existing work directory: %w", err)
+				return false, fmt.Errorf("removing existing work directory: %w", err)
 			}
 		}
-		err := os.MkdirAll(path, 0750)
+		err := os.MkdirAll(*path, 0750)
 		if err != nil {
-			return path, false, err
+			return false, err
 		}
-		return path, false, nil
+		return false, nil
 	}
 }
 
@@ -105,7 +108,7 @@ func main() {
 
 	// Parse command-line
 	flag.Parse()
-	inputFile := flag.Arg(0)
+	bookFile := flag.Arg(0)
 	if verbose {
 		vlog.SetOutput(os.Stdout)
 	}
@@ -113,27 +116,28 @@ func main() {
 	if help {
 		flag.Usage()
 		os.Exit(0)
-	} else if len(inputFile) == 0 {
+	} else if len(bookFile) == 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
 	start = max(start, 1)
-	trimMax = max(min(trimMax, 1.0), 0.0)
+	trimMaxP = max(min(trimMaxP, 1.0), 0.0)
+	fuzzP = max(min(fuzzP, 1.0), 0.0)
 
 	// Get number of pages
-	totalPages := getNumberOfPages(inputFile)
-	olog.Printf("Total Number of Pages: %d\n", totalPages)
+	pageCount := getNumberOfPages(bookFile)
+	olog.Printf("Total Number of Pages: %d\n", pageCount)
 	if end <= 0 {
-		end = totalPages
+		end = pageCount
 	}
-	if start > totalPages {
+	if start > pageCount {
 		elog.Panic("`--start` cannot exceeds total number of pages")
 	} else if start > end {
 		elog.Panic("`--start` cannot be larger than `--end`")
 	}
 
 	// Create work dir
-	workDir, isTmp, err := createWorkDir(workDir, true)
+	isTmp, err := createWorkDir(&workDir, true)
 	check(err, "creating work directory")
 	vlog.Println("Work directory:", workDir)
 	if isTmp {
@@ -152,16 +156,16 @@ func main() {
 
 	// For loop each page
 	var itr *imagick.MagickWand
-	outPage := 1
-	if start != 1 && end != totalPages {
+	if start != 1 && end != pageCount {
 		olog.Printf("Select page(s) from %d to %d to process. Total %d pages.\n", start, end, end-start+1)
 	}
+	outPage := start
 	for page := start; page <= end; {
 		olog.Printf("Processing page....(%d/%d)\n", page, end)
-		check(process(&itr, inputFile, &page, end, &outPage), fmt.Sprintf("processing page %d", page))
+		check(process(&itr, bookFile, pageCount, &page, end, &outPage), fmt.Sprintf("processing page %d", page))
 		vlog.Printf("next input page = %d, next output page = %d\n", page, outPage)
 	}
-	olog.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, outPage+1)
+	olog.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, outPage-start)
 
 	// TODO: Packaging
 

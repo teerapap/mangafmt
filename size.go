@@ -39,6 +39,11 @@ func (s Size) String() string {
 	return fmt.Sprintf("%dx%d", s.width, s.height)
 }
 
+func (s *Size) TranslateBy(dx int, dy int) {
+	s.width = uint(max(0, int(s.width)+dx))
+	s.height = uint(max(0, int(s.height)+dy))
+}
+
 func (s Size) ScaleBy(f float64) Size {
 	return Size{uint(float64(s.width) * f), uint(float64(s.height) * f)}
 }
