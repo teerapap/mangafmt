@@ -182,8 +182,8 @@ func main() {
 
 func getNumberOfPages(filename string) int {
 	f, err := os.Open(filename)
-	defer f.Close()
 	check(err, "opening input pdf file")
+	defer f.Close()
 	fi, err := f.Stat()
 	check(err, "checking input pdf file size")
 	r, err := pdf.NewReader(f, fi.Size())
