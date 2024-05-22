@@ -136,7 +136,7 @@ func concatPages(left *Page, right *Page) (*Page, error) {
 
 func postProcessingPage(p *Page, outFilePage string) error {
 	// Trim image with fuzz
-	if err := trimPage(p, 1.0-trimMaxP, fuzzP, bgColor, outFilePage); err != nil {
+	if err := trimPage(p, trimMinSizeP, fuzzP, bgColor, outFilePage); err != nil {
 		return fmt.Errorf("trimming page: %w", err)
 	}
 
@@ -157,8 +157,8 @@ func postProcessingPage(p *Page, outFilePage string) error {
 
 func trimPage(p *Page, minSizeP float64, fuzzP float64, bgColor string, outFile string) error {
 	// Trim image with fuzz
-	pageSize := size(p)
-	minSize := pageSize.ScaleBy(minSizeP)
+	pageRect := Rect{size: size(p)}
+	minSize := pageRect.size.ScaleBy(minSizeP)
 
 	// write tmp file
 	tmpFile := fmt.Sprintf("%s.trimming.png", outFile)
@@ -181,47 +181,44 @@ func trimPage(p *Page, minSizeP float64, fuzzP float64, bgColor string, outFile 
 		return fmt.Errorf("finding trim box: %w", err)
 	}
 
-	var tSize, tOffset Size
-	if _, err := fmt.Sscanf(ret.Meta, "%dx%d+%d+%d", &(tSize.width), &(tSize.height), &(tOffset.width), &(tOffset.height)); err != nil {
+	var trimRect Rect
+	if _, err := fmt.Sscanf(ret.Meta, "%dx%d+%d+%d", &(trimRect.size.width), &(trimRect.size.height), &(trimRect.origin.x), &(trimRect.origin.y)); err != nil {
 		return fmt.Errorf("parsing trim box %s: %w", ret.Meta, err)
 	}
-	tOffset.TranslateBy(-1, -1) // compensate trim guide border
-	// TODO: Add margin
-	vlog.Printf("trim box: %s+%d+%d\n", tSize, tOffset.width, tOffset.height)
+	trimRect = trimRect.
+		TranslateBy(-1, -1).               // remove trim guiding border
+		InsetBy(-trimMargin, -trimMargin). // add safety margin
+		BoundBy(pageRect)                  // bound by page rect
 
-	if tSize == pageSize { // trim box equals page size
+	vlog.Printf("trim box: %s\n", trimRect)
+
+	if trimRect == pageRect { // trim box equals page rect
 		vlog.Printf("No trimming needed\n")
 		return nil
 	}
 
-	if !minSize.CanFitIn(tSize) {
+	if !minSize.CanFitIn(trimRect.size) {
 		// smaller than min size after trimmed
-		otSize := tSize
+		oldRect := trimRect
 
-		// expand trim size in each dimension to reach minimum size
-		expand := func(cur uint, off uint, mn uint, mx uint) (uint, uint) {
-			if cur >= mn {
-				return cur, off
-			}
-			gap := mn - cur
-			leftover := uint(max(0, int(gap/2)-int(mx-(off+cur))))
-			return mn, off - min(off, (gap/2)+leftover)
-		}
-		tSize.width, tOffset.width = expand(tSize.width, tOffset.width, minSize.width, pageSize.width)
-		tSize.height, tOffset.height = expand(tSize.height, tOffset.height, minSize.height, pageSize.height)
+		gapX := max(0, int(minSize.width)-int(trimRect.size.width))
+		gapY := max(0, int(minSize.height)-int(trimRect.size.height))
+		trimRect = trimRect.
+			InsetBy(-gapX/2, -gapY/2). // expand each side to minimum size
+			MoveInside(pageRect)       // Move the rect to fit inside page rect frame as much as possible
 
-		olog.Printf("Page size %s is trimmed to %s but it is smaller than minimum size %s - expanding trim box to minimum %s\n", pageSize, otSize, minSize, tSize)
+		olog.Printf("Page size %s is trimmed by %s but it is smaller than minimum size %s - expanding trim box to minimum %s\n", pageRect.size, oldRect, minSize, trimRect)
 	}
 
 	// Crop based on trim size
-	if err := p.CropImage(tSize.width, tSize.height, int(tOffset.width), int(tOffset.height)); err != nil {
-		return fmt.Errorf("trimming page with %s+%d+%d: %w", tSize, tOffset.width, tOffset.height, err)
+	if err := p.CropImage(trimRect.size.width, trimRect.size.height, trimRect.origin.x, trimRect.origin.y); err != nil {
+		return fmt.Errorf("trimming page with %s: %w", trimRect, err)
 	}
 
 	// Print trim info
-	tWidthP := float64(tSize.width) * 100.0 / float64(pageSize.width)
-	tHeightP := float64(tSize.height) * 100.0 / float64(pageSize.height)
-	olog.Printf("Page size %s is trimmed to %s (%.2f%% | %.2f%%)\n", pageSize, tSize, tWidthP, tHeightP)
+	tWidthP := float64(trimRect.size.width) * 100.0 / float64(pageRect.size.width)
+	tHeightP := float64(trimRect.size.height) * 100.0 / float64(pageRect.size.height)
+	olog.Printf("Page size %s is trimmed by %s (%.2f%% | %.2f%%)\n", pageRect.size, trimRect, tWidthP, tHeightP)
 
 	return nil
 }

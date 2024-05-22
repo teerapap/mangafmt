@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,7 +24,8 @@ var workDir string
 var density uint
 var start int
 var end int
-var trimMaxP float64
+var trimMinSizeP float64
+var trimMargin int
 var fuzzP float64
 var targetSize Size
 var isRTL bool
@@ -45,7 +47,8 @@ func init() {
 	flag.BoolVar(&isRTL, "right-to-left", false, "right-to-left read direction (ex. Japanese manga)")
 	flag.StringVar(&bgColor, "background", "white", "background color")
 	flag.Float64Var(&fuzzP, "fuzz", 0.1, "color fuzz percentage (0.0-1.0)")
-	flag.Float64Var(&trimMaxP, "trim-max", 0.15, "maximum trim percentage (0.0-1.0)")
+	flag.Float64Var(&trimMinSizeP, "trim-min-size", 0.85, "minimum size in percentage after trimmed (0.0-1.0)")
+	flag.IntVar(&trimMargin, "trim-margin", 10, "safety trim margin (pixel)")
 	flag.UintVar(&targetSize.width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.height, "height", 1680, "output screen heigt (pixel)")
 }
@@ -66,6 +69,12 @@ func check(err error, doing string) {
 	if err != nil {
 		elog.Printf("while %s - %s\n", doing, err)
 		panic(err)
+	}
+}
+
+func assert(cond bool, errMsg string) {
+	if !cond {
+		panic(errors.New(errMsg))
 	}
 }
 
@@ -121,7 +130,7 @@ func main() {
 		os.Exit(1)
 	}
 	start = max(start, 1)
-	trimMaxP = max(min(trimMaxP, 1.0), 0.0)
+	trimMinSizeP = max(min(trimMinSizeP, 1.0), 0.0)
 	fuzzP = max(min(fuzzP, 1.0), 0.0)
 
 	// Get number of pages
