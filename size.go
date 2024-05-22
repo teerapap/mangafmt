@@ -119,6 +119,20 @@ func (r Rect) TranslateBy(dx int, dy int) Rect {
 	return Rect{r.origin.TranslateBy(dx, dy), r.size}
 }
 
+func (r Rect) LeftEdge(width uint, margin uint) Rect {
+	remWidth := max(0, int(r.size.width)-int(margin))
+	x := int(min(margin, r.size.width))
+	edgeWidth := min(uint(remWidth), width)
+	return Rect{Point{x, 0}, Size{edgeWidth, r.size.height}}
+}
+
+func (r Rect) RightEdge(width uint, margin uint) Rect {
+	remWidth := max(0, int(r.size.width)-int(margin))
+	x := max(0, remWidth-int(width))
+	edgeWidth := min(uint(remWidth), width)
+	return Rect{Point{x, 0}, Size{edgeWidth, r.size.height}}
+}
+
 func (r Rect) InsetBy(dx int, dy int) Rect {
 	origin := Point{
 		x: r.origin.x + dx,

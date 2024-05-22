@@ -16,6 +16,10 @@ import (
 
 type Page = imagick.MagickWand
 
+func rect(p *Page) Rect {
+	return Rect{Point{}, size(p)}
+}
+
 func size(p *Page) Size {
 	return Size{p.GetImageWidth(), p.GetImageHeight()}
 }
@@ -71,17 +75,19 @@ func process(itr **Page, bookFile string, pageCount int, curPage *int, lastPage 
 
 		// Check if the next page can merge with current page
 		var left *Page = current
+		var leftNum = *curPage
 		var right *Page = next
+		var rightNum = *curPage + 1
 		if isRTL {
-			left = next
-			right = current
+			left, right = right, left
+			leftNum, rightNum = rightNum, leftNum
 		}
-		connected, err := ifConnect(left, right)
+		connected, err := ifConnect(left, leftNum, right, rightNum)
 		if err != nil {
 			return fmt.Errorf("checking if two pages are connected: %w", err)
 		}
 		if connected {
-			olog.Printf("Connect page %d and %d together\n", *curPage, *curPage+1)
+			olog.Printf("Connect page %d and %d together\n", leftNum, rightNum)
 			// connect two pages
 			if current, err = concatPages(left, right); err != nil {
 				return fmt.Errorf("connecting two pages: %w", err)
@@ -115,9 +121,73 @@ func process(itr **Page, bookFile string, pageCount int, curPage *int, lastPage 
 	return nil
 }
 
-func ifConnect(left *Page, right *Page) (bool, error) {
-	// TODO: Implement connectness checking
-	return false, nil
+func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error) {
+	lpEdge := rect(left).RightEdge(edgeWidth, edgeMargin)
+	rpEdge := rect(right).LeftEdge(edgeWidth, edgeMargin)
+
+	if lpEdge.size != rpEdge.size {
+		olog.Printf("Two pages (%d <-> %d) are not connected because edge are not the same size - left(%s) != right(%s)\n", leftNum, rightNum, lpEdge.size, rpEdge.size)
+		return false, nil
+	} else if lpEdge.size.width == 0 {
+		olog.Printf("Two pages (%d <-> %d) are not connected because page is not wide enough - left(%s), right(%s)\n", leftNum, rightNum, lpEdge.size, rpEdge.size)
+		return false, nil
+	}
+
+	edge := lpEdge.size
+
+	// Prepare background canvas for comparison
+	bgCanvas := imagick.NewMagickWand()
+	defer bgCanvas.Destroy()
+	if err := bgCanvas.SetSize(edge.width, edge.height); err != nil {
+		return false, fmt.Errorf("setting background canvas size %s: %w", edge, err)
+	}
+	if err := bgCanvas.ReadImage(fmt.Sprintf("canvas:%s", bgColor)); err != nil {
+		return false, fmt.Errorf("creating background canvas: %w", err)
+	}
+
+	// Create left edge
+	left = left.Clone()
+	defer left.Destroy()
+	if err := left.CropImage(lpEdge.size.width, lpEdge.size.height, lpEdge.origin.x, lpEdge.origin.y); err != nil {
+		return false, fmt.Errorf("getting edge of left page(%d) with %s: %w", leftNum, lpEdge, err)
+	}
+	fuzz := fuzzFromPercent(fuzzP)
+	if err := left.SetImageFuzz(fuzz); err != nil {
+		return false, fmt.Errorf("setting left page fuzz %f: %w", fuzz, err)
+	}
+
+	// Compare left vs background canvas
+	distortion, err := left.GetImageDistortion(bgCanvas, imagick.METRIC_ROOT_MEAN_SQUARED_ERROR)
+	if err != nil {
+		return false, fmt.Errorf("calculating image distortion(RMSE) between left(%d) and background: %w", leftNum, err)
+	}
+	if distortion < 0.1 {
+		// edge is all background
+		olog.Printf("Left page(%d) edge matches with background color - rmse=%f\n", leftNum, distortion)
+		return false, nil
+	}
+	// TODO: Compare right vs background canvas as well
+
+	// Create right edge
+	right = right.Clone()
+	defer right.Destroy()
+	if err := right.CropImage(rpEdge.size.width, rpEdge.size.height, rpEdge.origin.x, rpEdge.origin.y); err != nil {
+		return false, fmt.Errorf("getting edge of right page with %s: %w", rpEdge, err)
+	}
+
+	// Compare left page edge vs right page edge
+	distortion, err = left.GetImageDistortion(right, imagick.METRIC_ROOT_MEAN_SQUARED_ERROR)
+	if err != nil {
+		return false, fmt.Errorf("calculating image distortion(RMSE) between left(%d) and right(%d): %w", leftNum, rightNum, err)
+	}
+	// TODO: Make this distortion condition a command argument
+	if distortion > 0.2 {
+		// have connection
+		olog.Printf("Left page(%d) edge and right page edge(%d) does not connect - rmse=%f\n", leftNum, rightNum, distortion)
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func concatPages(left *Page, right *Page) (*Page, error) {

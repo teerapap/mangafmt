@@ -30,6 +30,8 @@ var fuzzP float64
 var targetSize Size
 var isRTL bool
 var bgColor string
+var edgeWidth uint
+var edgeMargin uint
 
 func init() {
 	flag.Usage = func() {
@@ -45,6 +47,8 @@ func init() {
 	flag.IntVar(&end, "end", -1, "page end. (non-negative means last page)")
 	flag.BoolVar(&isRTL, "rtl", false, "right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&isRTL, "right-to-left", false, "right-to-left read direction (ex. Japanese manga)")
+	flag.UintVar(&edgeWidth, "edge", 2, "edge width for two-page connection check (pixel)")
+	flag.UintVar(&edgeMargin, "edge-margin", 5, "edge safety margin before edge width (pixel)")
 	flag.StringVar(&bgColor, "background", "white", "background color")
 	flag.Float64Var(&fuzzP, "fuzz", 0.1, "color fuzz percentage (0.0-1.0)")
 	flag.Float64Var(&trimMinSizeP, "trim-min-size", 0.85, "minimum size in percentage after trimmed (0.0-1.0)")
