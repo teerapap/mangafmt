@@ -16,6 +16,7 @@ import (
 var vlog = log.New(io.Discard, "Verbose: ", 0) // verbose log
 var olog = log.New(os.Stdout, "", 0)           // output log
 var elog = log.New(os.Stderr, "Error: ", 0)    // error log
+// TODO: Improve logger for single page processing with page number prefix
 
 // Command-line Parsing
 var help bool
@@ -55,6 +56,8 @@ func init() {
 	flag.IntVar(&trimMargin, "trim-margin", 10, "safety trim margin (pixel)")
 	flag.UintVar(&targetSize.width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.height, "height", 1680, "output screen heigt (pixel)")
+	// TODO: trim flag
+	// TODO: two-page connect flag and mode (disabled, connected page only, keep individual pages)
 }
 
 func helpUsage(msg string) {

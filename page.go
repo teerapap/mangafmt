@@ -103,6 +103,7 @@ func process(itr **Page, bookFile string, pageCount int, curPage *int, lastPage 
 	if err != nil {
 		return fmt.Errorf("creating images directory: %w", err)
 	}
+	// TODO: Set file name with real page number and skip for two-page-connected
 	fileFmt := fmt.Sprintf("%%s/Images/page-%%0%dd", numDigits(pageCount))
 	outFilePage := fmt.Sprintf(fileFmt, workDir, *outPage)
 
