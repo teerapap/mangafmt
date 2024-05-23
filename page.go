@@ -87,7 +87,6 @@ func process(itr **Page, bookFile string, pageCount int, curPage *int, lastPage 
 			return fmt.Errorf("checking if two pages are connected: %w", err)
 		}
 		if connected {
-			olog.Printf("Connect page %d and %d together\n", leftNum, rightNum)
 			// connect two pages
 			if current, err = concatPages(left, right); err != nil {
 				return fmt.Errorf("connecting two pages: %w", err)
@@ -103,9 +102,15 @@ func process(itr **Page, bookFile string, pageCount int, curPage *int, lastPage 
 	if err != nil {
 		return fmt.Errorf("creating images directory: %w", err)
 	}
-	// TODO: Set file name with real page number and skip for two-page-connected
-	fileFmt := fmt.Sprintf("%%s/Images/page-%%0%dd", numDigits(pageCount))
-	outFilePage := fmt.Sprintf(fileFmt, workDir, *outPage)
+	var outFilePage string
+	digits := numDigits(pageCount)
+	if processed == 2 { // two-page connected
+		fileFmt := fmt.Sprintf("%%s/Images/page-%%0%dd-%%0%dd", digits, digits)
+		outFilePage = fmt.Sprintf(fileFmt, workDir, *curPage, *curPage+1)
+	} else {
+		fileFmt := fmt.Sprintf("%%s/Images/page-%%0%dd", digits)
+		outFilePage = fmt.Sprintf(fileFmt, workDir, *curPage)
+	}
 
 	if err := postProcessingPage(current, outFilePage); err != nil {
 		return err
@@ -152,22 +157,17 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 	if err := left.CropImage(lpEdge.size.width, lpEdge.size.height, lpEdge.origin.x, lpEdge.origin.y); err != nil {
 		return false, fmt.Errorf("getting edge of left page(%d) with %s: %w", leftNum, lpEdge, err)
 	}
-	fuzz := fuzzFromPercent(fuzzP)
-	if err := left.SetImageFuzz(fuzz); err != nil {
-		return false, fmt.Errorf("setting left page fuzz %f: %w", fuzz, err)
-	}
 
 	// Compare left vs background canvas
 	distortion, err := left.GetImageDistortion(bgCanvas, imagick.METRIC_ROOT_MEAN_SQUARED_ERROR)
 	if err != nil {
 		return false, fmt.Errorf("calculating image distortion(RMSE) between left(%d) and background: %w", leftNum, err)
 	}
-	if distortion < 0.1 {
+	if distortion <= edgeBgDistort {
 		// edge is all background
-		olog.Printf("Left page(%d) edge matches with background color - rmse=%f\n", leftNum, distortion)
+		olog.Printf("Left page(%d) edge matches with background color - distortion=%f\n", leftNum, distortion)
 		return false, nil
 	}
-	// TODO: Compare right vs background canvas as well
 
 	// Create right edge
 	right = right.Clone()
@@ -175,20 +175,70 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 	if err := right.CropImage(rpEdge.size.width, rpEdge.size.height, rpEdge.origin.x, rpEdge.origin.y); err != nil {
 		return false, fmt.Errorf("getting edge of right page with %s: %w", rpEdge, err)
 	}
+	// Compare right vs background canvas
+	distortion, err = right.GetImageDistortion(bgCanvas, imagick.METRIC_ROOT_MEAN_SQUARED_ERROR)
+	if err != nil {
+		return false, fmt.Errorf("calculating image distortion(RMSE) between right(%d) and background: %w", rightNum, err)
+	}
+	if distortion <= edgeBgDistort {
+		// edge is all background
+		olog.Printf("Right page(%d) edge matches with background color - distortion=%f\n", rightNum, distortion)
+		return false, nil
+	}
 
 	// Compare left page edge vs right page edge
 	distortion, err = left.GetImageDistortion(right, imagick.METRIC_ROOT_MEAN_SQUARED_ERROR)
 	if err != nil {
 		return false, fmt.Errorf("calculating image distortion(RMSE) between left(%d) and right(%d): %w", leftNum, rightNum, err)
 	}
-	// TODO: Make this distortion condition a command argument
-	if distortion > 0.2 {
+	if distortion > edgeLrDistort {
 		// have connection
-		olog.Printf("Left page(%d) edge and right page edge(%d) does not connect - rmse=%f\n", leftNum, rightNum, distortion)
+		olog.Printf("Left page(%d) edge and right page edge(%d) does not connect - distortion=%f\n", leftNum, rightNum, distortion)
 		return false, nil
 	}
+	olog.Printf("Connect page %d and %d together - distortion=%f\n", leftNum, rightNum, distortion)
 
 	return true, nil
+}
+
+// for debugging
+func printDistortions(page1 *Page, name1 string, page2 *Page, name2 string) {
+	fuzz := fuzzFromPercent(fuzzP)
+	if err := page1.SetImageFuzz(fuzz); err != nil {
+		vlog.Printf("setting %s page fuzz %f: %s\n", name1, fuzz, err)
+		return
+	}
+
+	mnames := map[imagick.MetricType]string{
+		imagick.METRIC_ABSOLUTE_ERROR:                     "AE",
+		imagick.METRIC_MEAN_ABSOLUTE_ERROR:                "MAE",
+		imagick.METRIC_MEAN_ERROR_PER_PIXEL:               "MEPP",
+		imagick.METRIC_MEAN_SQUARED_ERROR:                 "MSE",
+		imagick.METRIC_PEAK_ABSOLUTE_ERROR:                "PAE",
+		imagick.METRIC_PEAK_SIGNAL_TO_NOISE_RATIO:         "PSNR",
+		imagick.METRIC_ROOT_MEAN_SQUARED_ERROR:            "RMSE",
+		imagick.METRIC_NORMALIZED_CROSS_CORRELATION_ERROR: "NCCE",
+		imagick.METRIC_FUZZ_ERROR:                         "FUZZ",
+	}
+
+	metrics := []imagick.MetricType{
+		imagick.METRIC_ABSOLUTE_ERROR,
+		imagick.METRIC_MEAN_ABSOLUTE_ERROR,
+		imagick.METRIC_MEAN_ERROR_PER_PIXEL,
+		imagick.METRIC_MEAN_SQUARED_ERROR,
+		imagick.METRIC_ROOT_MEAN_SQUARED_ERROR,
+	}
+
+	vlog.Printf("---------- Distortion between %s vs %s ----------\n", name1, name2)
+	for _, m := range metrics {
+		mn := mnames[m]
+		distortion, err := page1.GetImageDistortion(page2, m)
+		if err != nil {
+			vlog.Printf("%s: %s\n", mn, err)
+		} else {
+			vlog.Printf("%s: %f\n", mn, distortion)
+		}
+	}
 }
 
 func concatPages(left *Page, right *Page) (*Page, error) {
