@@ -59,7 +59,7 @@ func process(itr **Page, bookFile string, pageCount int, curPage *int, lastPage 
 
 	// Look ahead next page
 	var next *Page
-	if *curPage+1 <= lastPage { // has next page
+	if *curPage+1 <= lastPage && isConnEnabled { // has next page
 		// Read next page
 		next = imagick.NewMagickWand()
 		defer next.Destroy()
@@ -128,8 +128,8 @@ func process(itr **Page, bookFile string, pageCount int, curPage *int, lastPage 
 }
 
 func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error) {
-	lpEdge := rect(left).RightEdge(edgeWidth, edgeMargin)
-	rpEdge := rect(right).LeftEdge(edgeWidth, edgeMargin)
+	lpEdge := rect(left).RightEdge(connEdgeWidth, connEdgeMargin)
+	rpEdge := rect(right).LeftEdge(connEdgeWidth, connEdgeMargin)
 
 	if lpEdge.size != rpEdge.size {
 		olog.Printf("[Connect] Two pages (%d <-> %d) are not connected because both edges are not the same size - left(%s) != right(%s)\n", leftNum, rightNum, lpEdge.size, rpEdge.size)
@@ -163,9 +163,9 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 	if err != nil {
 		return false, fmt.Errorf("calculating image distortion(RMSE) between left(%d) and background: %w", leftNum, err)
 	}
-	if distortion <= edgeBgDistort {
+	if distortion <= connBgDistort {
 		// edge is all background
-		olog.Printf("[Connect] Left page(%d) edge has background border - distortion(%f) is below threshold(%f)\n", leftNum, distortion, edgeBgDistort)
+		olog.Printf("[Connect] Left page(%d) edge has background border - distortion(%f) is below threshold(%f)\n", leftNum, distortion, connBgDistort)
 		return false, nil
 	}
 
@@ -180,9 +180,9 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 	if err != nil {
 		return false, fmt.Errorf("calculating image distortion(RMSE) between right(%d) and background: %w", rightNum, err)
 	}
-	if distortion <= edgeBgDistort {
+	if distortion <= connBgDistort {
 		// edge is all background
-		olog.Printf("[Connect] Right page(%d) edge has background border - distortion(%f) is below threshold(%f)\n", rightNum, distortion, edgeBgDistort)
+		olog.Printf("[Connect] Right page(%d) edge has background border - distortion(%f) is below threshold(%f)\n", rightNum, distortion, connBgDistort)
 		return false, nil
 	}
 
@@ -191,9 +191,9 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 	if err != nil {
 		return false, fmt.Errorf("calculating image distortion(RMSE) between left(%d) and right(%d): %w", leftNum, rightNum, err)
 	}
-	if distortion > edgeLrDistort {
+	if distortion > connLrDistort {
 		// have connection
-		olog.Printf("[Connect] Left page(%d) edge and right page edge(%d) do not connect - distortion(%f) is more than threshold(%f)\n", leftNum, rightNum, distortion, edgeLrDistort)
+		olog.Printf("[Connect] Left page(%d) edge and right page edge(%d) do not connect - distortion(%f) is more than threshold(%f)\n", leftNum, rightNum, distortion, connLrDistort)
 		return false, nil
 	}
 	olog.Printf("[Connect] Page %d and %d are connected! - distortion=%f\n", leftNum, rightNum, distortion)
@@ -257,8 +257,10 @@ func concatPages(left *Page, right *Page) (*Page, error) {
 
 func postProcessingPage(p *Page, outFilePage string) error {
 	// Trim image with fuzz
-	if err := trimPage(p, trimMinSizeP, fuzzP, bgColor, outFilePage); err != nil {
-		return fmt.Errorf("trimming page: %w", err)
+	if isTrimEnabled {
+		if err := trimPage(p, trimMinSizeP, fuzzP, bgColor, outFilePage); err != nil {
+			return fmt.Errorf("trimming page: %w", err)
+		}
 	}
 
 	// Resize page to aspect fit screen

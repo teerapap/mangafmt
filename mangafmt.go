@@ -35,16 +35,18 @@ var workDir string
 var density uint
 var start int
 var end int
+var fuzzP float64
+var bgColor string
+var isRTL bool
+var isTrimEnabled bool
 var trimMinSizeP float64
 var trimMargin int
-var fuzzP float64
+var isConnEnabled bool
+var connEdgeWidth uint
+var connEdgeMargin uint
+var connBgDistort float64
+var connLrDistort float64
 var targetSize Size
-var isRTL bool
-var bgColor string
-var edgeWidth uint
-var edgeMargin uint
-var edgeBgDistort float64
-var edgeLrDistort float64
 
 func init() {
 	flag.Usage = func() {
@@ -58,20 +60,20 @@ func init() {
 	flag.UintVar(&density, "density", 300, "output density (DPI)")
 	flag.IntVar(&start, "start", 1, "page start. (non-negative means first page)")
 	flag.IntVar(&end, "end", -1, "page end. (non-negative means last page)")
+	flag.Float64Var(&fuzzP, "fuzz", 0.1, "color fuzz (percentage)[0.0-1.0]")
+	flag.StringVar(&bgColor, "background", "white", "background color")
 	flag.BoolVar(&isRTL, "rtl", false, "right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&isRTL, "right-to-left", false, "right-to-left read direction (ex. Japanese manga)")
-	flag.UintVar(&edgeWidth, "edge", 2, "edge width for two-page connection check (pixel)")
-	flag.UintVar(&edgeMargin, "edge-margin", 2, "edge safety margin before edge width (pixel)")
-	flag.Float64Var(&edgeBgDistort, "edge-bg-distortion", 0.4, "page is considered a single page if the distortion between its edge and background color are less within this threshold (percentage)[0.0-1.0]")
-	flag.Float64Var(&edgeLrDistort, "edge-lr-distortion", 0.4, "two pages are considered connected if the distortion between their edges are less within this threshold (percentage)[0.0-1.0]")
-	flag.StringVar(&bgColor, "background", "white", "background color")
-	flag.Float64Var(&fuzzP, "fuzz", 0.1, "color fuzz (percentage)[0.0-1.0]")
+	flag.BoolVar(&isTrimEnabled, "trim", true, "enable trim edge")
 	flag.Float64Var(&trimMinSizeP, "trim-min-size", 0.85, "minimum size after trimmed (percentage)[0.0-1.0]")
 	flag.IntVar(&trimMargin, "trim-margin", 10, "safety trim margin (pixel)")
+	flag.BoolVar(&isConnEnabled, "connect", true, "enable two-page connection")
+	flag.UintVar(&connEdgeWidth, "connect-edge", 2, "edge width for two-page connection check (pixel)")
+	flag.UintVar(&connEdgeMargin, "connect-margin", 2, "safety margin before edge width (pixel)")
+	flag.Float64Var(&connBgDistort, "connect-bg-distortion", 0.4, "a page is considered a single page if the distortion between its edge and background color are less within this threshold (percentage)[0.0-1.0]")
+	flag.Float64Var(&connLrDistort, "connect-lr-distortion", 0.4, "two pages are considered connected if the distortion between their edges are less within this threshold (percentage)[0.0-1.0]")
 	flag.UintVar(&targetSize.width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.height, "height", 1680, "output screen heigt (pixel)")
-	// TODO: trim flag
-	// TODO: two-page connect flag and mode (disabled, connected page only, keep individual pages)
 }
 
 func helpUsage(msg string) {
