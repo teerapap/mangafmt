@@ -47,6 +47,7 @@ var connEdgeMargin uint
 var connBgDistort float64
 var connLrDistort float64
 var targetSize Size
+var grayscale bool
 
 func init() {
 	flag.Usage = func() {
@@ -74,6 +75,7 @@ func init() {
 	flag.Float64Var(&connLrDistort, "connect-lr-distortion", 0.4, "two pages are considered connected if the distortion between their edges are less within this threshold (percentage)[0.0-1.0]")
 	flag.UintVar(&targetSize.width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.height, "height", 1680, "output screen heigt (pixel)")
+	flag.BoolVar(&grayscale, "grayscale", true, "convert to grayscale images")
 }
 
 func helpUsage(msg string) {

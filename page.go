@@ -268,7 +268,16 @@ func postProcessingPage(p *Page, outFilePage string) error {
 		return fmt.Errorf("resizing page to fit to screen: %w", err)
 	}
 
-	// TODO: Convert to grayscale
+	// Convert to grayscale
+	if grayscale {
+		olog.Printf("[Grayscale] Converting to grayscale\n")
+		if err := p.TransformImageColorspace(imagick.COLORSPACE_GRAY); err != nil {
+			return fmt.Errorf("converting to grayscale: %w", err)
+		}
+		if err := p.SetImageDepth(8); err != nil {
+			return fmt.Errorf("setting output image depth to 8 bits: %w", err)
+		}
+	}
 
 	// Save as raw image
 	outFile := fmt.Sprintf("%s.png", outFilePage)
