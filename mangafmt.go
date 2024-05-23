@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 
 	"gopkg.in/gographics/imagick.v2/imagick"
 	"rsc.io/pdf"
@@ -16,7 +17,16 @@ import (
 var vlog = log.New(io.Discard, "Verbose: ", 0) // verbose log
 var olog = log.New(os.Stdout, "", 0)           // output log
 var elog = log.New(os.Stderr, "Error: ", 0)    // error log
-// TODO: Improve logger for single page processing with page number prefix
+
+func SetLogIndent(level uint) {
+	var indent = ""
+	if level > 0 {
+		indent = strings.Repeat(" ", int(level)*4)
+	}
+	vlog.SetPrefix(fmt.Sprintf("%sVerbose: ", indent))
+	olog.SetPrefix(fmt.Sprintf("%s", indent))
+	elog.SetPrefix(fmt.Sprintf("%sError: ", indent))
+}
 
 // Command-line Parsing
 var help bool
@@ -176,19 +186,26 @@ func main() {
 
 	// For loop each page
 	var itr *imagick.MagickWand
-	if start != 1 && end != pageCount {
-		olog.Printf("Select page(s) from %d to %d to process. Total %d pages.\n", start, end, end-start+1)
+	if start != 1 || end != pageCount {
+		olog.Printf("Start processing from %d to %d to process. Total %d pages.\n", start, end, end-start+1)
+	} else {
+		olog.Printf("Start processing. Total %d pages.\n", end-start+1)
 	}
+	SetLogIndent(1)
 	outPage := start
 	for page := start; page <= end; {
 		olog.Printf("Processing page....(%d/%d)\n", page, end)
+		SetLogIndent(2)
 		check(process(&itr, bookFile, pageCount, &page, end, &outPage), fmt.Sprintf("processing page %d", page))
 		vlog.Printf("next input page = %d, next output page = %d\n", page, outPage)
+		SetLogIndent(1)
+		olog.Println("")
 	}
+	SetLogIndent(0)
+	olog.Printf("Done processing.\n")
 	olog.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, outPage-start)
 
 	// TODO: Packaging
-
 }
 
 func getNumberOfPages(filename string) int {
