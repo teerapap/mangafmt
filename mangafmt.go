@@ -4,29 +4,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"log"
 	"os"
-	"strings"
 
+	"github.com/teerapap/mangafmt/internal/log"
 	"gopkg.in/gographics/imagick.v2/imagick"
 	"rsc.io/pdf"
 )
-
-// Loggers
-var vlog = log.New(io.Discard, "Verbose: ", 0) // verbose log
-var olog = log.New(os.Stdout, "", 0)           // output log
-var elog = log.New(os.Stderr, "Error: ", 0)    // error log
-
-func SetLogIndent(level uint) {
-	var indent = ""
-	if level > 0 {
-		indent = strings.Repeat(" ", int(level)*4)
-	}
-	vlog.SetPrefix(fmt.Sprintf("%sVerbose: ", indent))
-	olog.SetPrefix(fmt.Sprintf("%s", indent))
-	elog.SetPrefix(fmt.Sprintf("%sError: ", indent))
-}
 
 // Command-line Parsing
 var help bool
@@ -80,7 +63,7 @@ func init() {
 
 func helpUsage(msg string) {
 	if msg != "" {
-		elog.Printf("Require input pdf file")
+		log.Error(msg)
 	}
 	fmt.Fprintf(flag.CommandLine.Output(), "%s [options] <input_pdf_file>\n", os.Args[0])
 	flag.PrintDefaults()
@@ -92,7 +75,7 @@ func helpUsage(msg string) {
 // Helper functions
 func check(err error, doing string) {
 	if err != nil {
-		elog.Printf("while %s - %s\n", doing, err)
+		log.Errorf("while %s - %s", doing, err)
 		panic(err)
 	}
 }
@@ -143,9 +126,7 @@ func main() {
 	// Parse command-line
 	flag.Parse()
 	bookFile := flag.Arg(0)
-	if verbose {
-		vlog.SetOutput(os.Stdout)
-	}
+	log.SetVerbose(verbose)
 
 	if help {
 		flag.Usage()
@@ -160,54 +141,54 @@ func main() {
 
 	// Get number of pages
 	pageCount := getNumberOfPages(bookFile)
-	olog.Printf("Total Number of Pages: %d\n", pageCount)
+	log.Printf("Total Number of Pages: %d", pageCount)
 	if end <= 0 {
 		end = pageCount
 	}
 	if start > pageCount {
-		elog.Panic("`--start` cannot exceeds total number of pages")
+		log.Panic("`--start` cannot exceeds total number of pages")
 	} else if start > end {
-		elog.Panic("`--start` cannot be larger than `--end`")
+		log.Panic("`--start` cannot be larger than `--end`")
 	}
 
 	// Create work dir
 	isTmp, err := createWorkDir(&workDir, true)
 	check(err, "creating work directory")
-	vlog.Println("Work directory:", workDir)
+	log.Verbosef("Work directory: %s", workDir)
 	if isTmp {
 		defer os.RemoveAll(workDir)
 	}
 
 	// Initialize Imagemagick
-	vlog.Println("Initializing Imagemagick")
+	log.Verbose("Initializing Imagemagick")
 	imagick.Initialize()
 	defer func() {
-		vlog.Println("Terminating Imagemagick")
+		log.Verbose("Terminating Imagemagick")
 		imagick.Terminate()
-		vlog.Println("Terminated Imagemagick")
+		log.Verbose("Terminated Imagemagick")
 	}()
-	vlog.Println("Initialized Imagemagick")
+	log.Verbose("Initialized Imagemagick")
 
 	// For loop each page
 	var itr *imagick.MagickWand
 	if start != 1 || end != pageCount {
-		olog.Printf("Start processing from %d to %d to process. Total %d pages.\n", start, end, end-start+1)
+		log.Printf("Start processing from %d to %d to process. Total %d pages.", start, end, end-start+1)
 	} else {
-		olog.Printf("Start processing. Total %d pages.\n", end-start+1)
+		log.Printf("Start processing. Total %d pages.", end-start+1)
 	}
-	SetLogIndent(1)
+	log.SetLogIndent(1)
 	outPage := start
 	for page := start; page <= end; {
-		olog.Printf("Processing page....(%d/%d)\n", page, end)
-		SetLogIndent(2)
+		log.Printf("Processing page....(%d/%d)", page, end)
+		log.SetLogIndent(2)
 		check(process(&itr, bookFile, pageCount, &page, end, &outPage), fmt.Sprintf("processing page %d", page))
-		vlog.Printf("next input page = %d, next output page = %d\n", page, outPage)
-		SetLogIndent(1)
-		olog.Println("")
+		log.Verbosef("next input page = %d, next output page = %d", page, outPage)
+		log.SetLogIndent(1)
+		log.Print("")
 	}
-	SetLogIndent(0)
-	olog.Printf("Done processing.\n")
-	olog.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, outPage-start)
+	log.SetLogIndent(0)
+	log.Printf("Done processing.")
+	log.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, outPage-start)
 
 	// TODO: Packaging
 }

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/teerapap/mangafmt/internal/log"
 	"gopkg.in/gographics/imagick.v2/imagick"
 )
 
@@ -132,10 +133,10 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 	rpEdge := rect(right).LeftEdge(connEdgeWidth, connEdgeMargin)
 
 	if lpEdge.size != rpEdge.size {
-		olog.Printf("[Connect] Two pages (%d <-> %d) are not connected because both edges are not the same size - left(%s) != right(%s)\n", leftNum, rightNum, lpEdge.size, rpEdge.size)
+		log.Printf("[Connect] Two pages (%d <-> %d) are not connected because both edges are not the same size - left(%s) != right(%s)", leftNum, rightNum, lpEdge.size, rpEdge.size)
 		return false, nil
 	} else if lpEdge.size.width == 0 {
-		olog.Printf("[Connect] Two pages (%d <-> %d) are not connected because both pages are not wide enough - left(%s), right(%s)\n", leftNum, rightNum, lpEdge.size, rpEdge.size)
+		log.Printf("[Connect] Two pages (%d <-> %d) are not connected because both pages are not wide enough - left(%s), right(%s)", leftNum, rightNum, lpEdge.size, rpEdge.size)
 		return false, nil
 	}
 
@@ -165,7 +166,7 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 	}
 	if distortion <= connBgDistort {
 		// edge is all background
-		olog.Printf("[Connect] Left page(%d) edge has background border - distortion(%f) is below threshold(%f)\n", leftNum, distortion, connBgDistort)
+		log.Printf("[Connect] Left page(%d) edge has background border - distortion(%f) is below threshold(%f)", leftNum, distortion, connBgDistort)
 		return false, nil
 	}
 
@@ -182,7 +183,7 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 	}
 	if distortion <= connBgDistort {
 		// edge is all background
-		olog.Printf("[Connect] Right page(%d) edge has background border - distortion(%f) is below threshold(%f)\n", rightNum, distortion, connBgDistort)
+		log.Printf("[Connect] Right page(%d) edge has background border - distortion(%f) is below threshold(%f)", rightNum, distortion, connBgDistort)
 		return false, nil
 	}
 
@@ -193,10 +194,10 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 	}
 	if distortion > connLrDistort {
 		// have connection
-		olog.Printf("[Connect] Left page(%d) edge and right page edge(%d) do not connect - distortion(%f) is more than threshold(%f)\n", leftNum, rightNum, distortion, connLrDistort)
+		log.Printf("[Connect] Left page(%d) edge and right page edge(%d) do not connect - distortion(%f) is more than threshold(%f)", leftNum, rightNum, distortion, connLrDistort)
 		return false, nil
 	}
-	olog.Printf("[Connect] Page %d and %d are connected! - distortion=%f\n", leftNum, rightNum, distortion)
+	log.Printf("[Connect] Page %d and %d are connected! - distortion=%f", leftNum, rightNum, distortion)
 
 	return true, nil
 }
@@ -205,7 +206,7 @@ func ifConnect(left *Page, leftNum int, right *Page, rightNum int) (bool, error)
 func printDistortions(page1 *Page, name1 string, page2 *Page, name2 string) {
 	fuzz := fuzzFromPercent(fuzzP)
 	if err := page1.SetImageFuzz(fuzz); err != nil {
-		vlog.Printf("[Connect] Setting %s page fuzz %f: %s\n", name1, fuzz, err)
+		log.Verbosef("[Connect] Setting %s page fuzz %f: %s", name1, fuzz, err)
 		return
 	}
 
@@ -229,14 +230,14 @@ func printDistortions(page1 *Page, name1 string, page2 *Page, name2 string) {
 		imagick.METRIC_ROOT_MEAN_SQUARED_ERROR,
 	}
 
-	vlog.Printf("[Connect] Distortion between %s vs %s\n", name1, name2)
+	log.Verbosef("[Connect] Distortion between %s vs %s", name1, name2)
 	for _, m := range metrics {
 		mn := mnames[m]
 		distortion, err := page1.GetImageDistortion(page2, m)
 		if err != nil {
-			vlog.Printf("[Connect] %s: %s\n", mn, err)
+			log.Verbosef("[Connect] %s: %s", mn, err)
 		} else {
-			vlog.Printf("[Connect] %s: %f\n", mn, distortion)
+			log.Verbosef("[Connect] %s: %f", mn, distortion)
 		}
 	}
 }
@@ -270,7 +271,7 @@ func postProcessingPage(p *Page, outFilePage string) error {
 
 	// Convert to grayscale
 	if grayscale {
-		olog.Printf("[Grayscale] Converting to grayscale\n")
+		log.Printf("[Grayscale] Converting to grayscale")
 		if err := p.TransformImageColorspace(imagick.COLORSPACE_GRAY); err != nil {
 			return fmt.Errorf("converting to grayscale: %w", err)
 		}
@@ -322,10 +323,10 @@ func trimPage(p *Page, minSizeP float64, fuzzP float64, bgColor string, outFile 
 		InsetBy(-trimMargin, -trimMargin). // add safety margin
 		BoundBy(pageRect)                  // bound by page rect
 
-	vlog.Printf("[Trim] trim box: %s\n", trimRect)
+	log.Verbosef("[Trim] trim box: %s", trimRect)
 
 	if trimRect == pageRect { // trim box equals page rect
-		olog.Printf("[Trim] No trimming needed\n")
+		log.Printf("[Trim] No trimming needed")
 		return nil
 	}
 
@@ -339,7 +340,7 @@ func trimPage(p *Page, minSizeP float64, fuzzP float64, bgColor string, outFile 
 			InsetBy(-gapX/2, -gapY/2). // expand each side to minimum size
 			MoveInside(pageRect)       // Move the rect to fit inside page rect frame as much as possible
 
-		olog.Printf("[Trim] Page size %s is trimmed by %s but it is smaller than minimum size %s - expanding trim box to minimum %s\n", pageRect.size, oldRect, minSize, trimRect)
+		log.Printf("[Trim] Page size %s is trimmed by %s but it is smaller than minimum size %s - expanding trim box to minimum %s", pageRect.size, oldRect, minSize, trimRect)
 	}
 
 	// Crop based on trim size
@@ -350,19 +351,18 @@ func trimPage(p *Page, minSizeP float64, fuzzP float64, bgColor string, outFile 
 	// Print trim info
 	tWidthP := float64(trimRect.size.width) * 100.0 / float64(pageRect.size.width)
 	tHeightP := float64(trimRect.size.height) * 100.0 / float64(pageRect.size.height)
-	olog.Printf("[Trim] Page size %s is trimmed by %s (%.2f%% | %.2f%%)\n", pageRect.size, trimRect, tWidthP, tHeightP)
+	log.Printf("[Trim] Page size %s is trimmed by %s (%.2f%% | %.2f%%)", pageRect.size, trimRect, tWidthP, tHeightP)
 
 	return nil
 }
 
 func resizePage(p *Page, screen Size) error {
-	// Trim image with fuzz
 	pageSize := size(p)
 	pgOrient := pageSize.Orientation()
 	scrOrient := screen.Orientation()
 	if pgOrient != Square && pgOrient != scrOrient {
 		// rotate counter-clockwise
-		olog.Printf("[Resize] Rotating page because page orientation %s (%s) does not match screen orientation (%s)\n", pageSize, pgOrient, scrOrient)
+		log.Printf("[Resize] Rotating page because page orientation %s (%s) does not match screen orientation (%s)", pageSize, pgOrient, scrOrient)
 		pw := imagick.NewPixelWand()
 		defer pw.Destroy()
 		if err := p.RotateImage(pw, 270); err != nil {
@@ -373,12 +373,12 @@ func resizePage(p *Page, screen Size) error {
 	}
 
 	if pageSize.CanFitIn(screen) {
-		olog.Printf("[Resize] Page size %s can fit in screen size %s - skip resizing\n", pageSize, screen)
+		log.Printf("[Resize] Page size %s can fit in screen size %s - skip resizing", pageSize, screen)
 		return nil
 	}
 	fittedSize := pageSize.AspectFitIn(screen, false)
 
-	olog.Printf("[Resize] Resizing page size %s to size %s fit in screen size %s \n", pageSize, fittedSize, screen)
+	log.Printf("[Resize] Resizing page size %s to size %s fit in screen size %s", pageSize, fittedSize, screen)
 	if err := p.ResizeImage(fittedSize.width, fittedSize.height, imagick.FILTER_LANCZOS, 1); err != nil {
 		return fmt.Errorf("Resizing page: %w", err)
 	}
