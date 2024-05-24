@@ -5,10 +5,12 @@
 // Distributed under terms of the MIT license.
 //
 
-package main
+package book
 
 import (
 	"fmt"
+
+	"github.com/teerapap/mangafmt/internal/util"
 )
 
 type Orientation int
@@ -31,25 +33,25 @@ func (o Orientation) String() string {
 }
 
 type Size struct {
-	width  uint
-	height uint
+	Width  uint
+	Height uint
 }
 
 func (s Size) String() string {
-	return fmt.Sprintf("%dx%d", s.width, s.height)
+	return fmt.Sprintf("%dx%d", s.Width, s.Height)
 }
 
 func (s Size) ScaleBy(f float64) Size {
-	assert(f >= 0, "scale factor cannot be negative")
-	return Size{uint(float64(s.width) * f), uint(float64(s.height) * f)}
+	util.Assert(f >= 0, "scale factor cannot be negative")
+	return Size{uint(float64(s.Width) * f), uint(float64(s.Height) * f)}
 }
 
 func (s Size) Rotate() Size {
-	return Size{s.height, s.width}
+	return Size{s.Height, s.Width}
 }
 
 func (s Size) CanFitIn(box Size) bool {
-	return s.width <= box.width && s.height <= box.height
+	return s.Width <= box.Width && s.Height <= box.Height
 }
 
 func (s Size) AspectFitIn(box Size, enlarge bool) Size {
@@ -57,8 +59,8 @@ func (s Size) AspectFitIn(box Size, enlarge bool) Size {
 		return s
 	}
 
-	rW := float64(box.width) / float64(s.width)
-	rH := float64(box.height) / float64(s.height)
+	rW := float64(box.Width) / float64(s.Width)
+	rH := float64(box.Height) / float64(s.Height)
 	if rW < rH {
 		return s.ScaleBy(rW)
 	} else {
@@ -68,9 +70,9 @@ func (s Size) AspectFitIn(box Size, enlarge bool) Size {
 
 func (s Size) Orientation() Orientation {
 	switch {
-	case s.width < s.height:
+	case s.Width < s.Height:
 		return Portrait
-	case s.width > s.height:
+	case s.Width > s.Height:
 		return Landscape
 	default:
 		return Square
@@ -78,16 +80,16 @@ func (s Size) Orientation() Orientation {
 }
 
 type Point struct {
-	x int
-	y int
+	X int
+	Y int
 }
 
 func (p Point) String() string {
-	return fmt.Sprintf("(%d, %d)", p.x, p.y)
+	return fmt.Sprintf("(%d, %d)", p.X, p.Y)
 }
 
 func (p Point) TranslateBy(dx int, dy int) Point {
-	return Point{p.x + dx, p.y + dy}
+	return Point{p.X + dx, p.Y + dy}
 }
 
 type Rect struct {
@@ -96,23 +98,23 @@ type Rect struct {
 }
 
 func (r Rect) String() string {
-	return fmt.Sprintf("%s+%d+%d", r.size, r.origin.x, r.origin.y)
+	return fmt.Sprintf("%s+%d+%d", r.size, r.origin.X, r.origin.Y)
 }
 
 func (r Rect) MinX() int {
-	return r.origin.x
+	return r.origin.X
 }
 
 func (r Rect) MinY() int {
-	return r.origin.y
+	return r.origin.Y
 }
 
 func (r Rect) MaxX() int {
-	return r.origin.x + int(r.size.width)
+	return r.origin.X + int(r.size.Width)
 }
 
 func (r Rect) MaxY() int {
-	return r.origin.y + int(r.size.height)
+	return r.origin.Y + int(r.size.Height)
 }
 
 func (r Rect) TranslateBy(dx int, dy int) Rect {
@@ -120,53 +122,53 @@ func (r Rect) TranslateBy(dx int, dy int) Rect {
 }
 
 func (r Rect) LeftEdge(width uint, margin uint) Rect {
-	remWidth := max(0, int(r.size.width)-int(margin))
-	x := int(min(margin, r.size.width))
+	remWidth := max(0, int(r.size.Width)-int(margin))
+	x := int(min(margin, r.size.Width))
 	edgeWidth := min(uint(remWidth), width)
-	return Rect{Point{x, 0}, Size{edgeWidth, r.size.height}}
+	return Rect{Point{x, 0}, Size{edgeWidth, r.size.Height}}
 }
 
 func (r Rect) RightEdge(width uint, margin uint) Rect {
-	remWidth := max(0, int(r.size.width)-int(margin))
+	remWidth := max(0, int(r.size.Width)-int(margin))
 	x := max(0, remWidth-int(width))
 	edgeWidth := min(uint(remWidth), width)
-	return Rect{Point{x, 0}, Size{edgeWidth, r.size.height}}
+	return Rect{Point{x, 0}, Size{edgeWidth, r.size.Height}}
 }
 
 func (r Rect) InsetBy(dx int, dy int) Rect {
 	origin := Point{
-		x: r.origin.x + dx,
-		y: r.origin.y + dy,
+		X: r.origin.X + dx,
+		Y: r.origin.Y + dy,
 	}
 	size := Size{
-		width:  uint(max(0, int(r.size.width)-2*dx)),
-		height: uint(max(0, int(r.size.height)-2*dy)),
+		Width:  uint(max(0, int(r.size.Width)-2*dx)),
+		Height: uint(max(0, int(r.size.Height)-2*dy)),
 	}
 	return Rect{origin, size}
 }
 
 func (r Rect) BoundBy(frame Rect) Rect {
 	nr := r
-	nr.origin.x = max(r.MinX(), frame.MinX())
-	nr.origin.y = max(r.MinY(), frame.MinY())
-	nr.size.width = uint(min(nr.MaxX(), frame.MaxX()) - nr.origin.x)
-	nr.size.height = uint(min(nr.MaxY(), frame.MaxY()) - nr.origin.y)
+	nr.origin.X = max(r.MinX(), frame.MinX())
+	nr.origin.Y = max(r.MinY(), frame.MinY())
+	nr.size.Width = uint(min(nr.MaxX(), frame.MaxX()) - nr.origin.X)
+	nr.size.Height = uint(min(nr.MaxY(), frame.MaxY()) - nr.origin.Y)
 	return nr
 }
 
 func (r Rect) MoveInside(frame Rect) Rect {
 	nr := r
 	if nr.MinX() < frame.MinX() { // move origin x within frame
-		nr.origin.x = frame.origin.x
+		nr.origin.X = frame.origin.X
 	}
 	if nr.MaxX() > frame.MaxX() { //move origin x back to fit max x within frame
-		nr.origin.x -= nr.MaxX() - frame.MaxX()
+		nr.origin.X -= nr.MaxX() - frame.MaxX()
 	}
 	if nr.MinY() < frame.MinY() { // move origin y within frame
-		nr.origin.y = frame.origin.y
+		nr.origin.Y = frame.origin.Y
 	}
 	if nr.MaxY() > frame.MaxY() { //move origin y back to fit max y within frame
-		nr.origin.y -= nr.MaxY() - frame.MaxY()
+		nr.origin.Y -= nr.MaxY() - frame.MaxY()
 	}
 	return nr.BoundBy(frame) // finally bounds by frame
 }
