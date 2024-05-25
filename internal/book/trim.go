@@ -45,11 +45,12 @@ func (p *Page) Trim(cfg TrimConfig, fuzzP float64, outFile string) error {
 		"-border", "1",
 		"-fuzz", fmt.Sprintf("%.0f%%", fuzzP),
 		"-format", "%@",
-		"info:",
+		"null:",
 	})
 	if err != nil {
 		return fmt.Errorf("finding trim box: %w", err)
 	}
+	ret.Info.Destroy()
 
 	var trimRect Rect
 	if _, err := fmt.Sscanf(ret.Meta, "%dx%d+%d+%d", &(trimRect.size.Width), &(trimRect.size.Height), &(trimRect.origin.X), &(trimRect.origin.Y)); err != nil {
