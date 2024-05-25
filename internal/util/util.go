@@ -31,7 +31,7 @@ func Must1[T any](obj T, err error) func(doing string) T {
 	}
 }
 
-func Must2[T1 any, T2 any](obj1 T1, obj2 T2, err error, doing string) func(doing string) (T1, T2) {
+func Must2[T1 any, T2 any](obj1 T1, obj2 T2, err error) func(doing string) (T1, T2) {
 	return func(doing string) (T1, T2) {
 		Must(err)(doing)
 		return obj1, obj2

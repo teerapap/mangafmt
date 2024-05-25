@@ -47,15 +47,19 @@ func digitCount(total int) int {
 	return d
 }
 
-func (p Page) Filename() string {
+func (p Page) Filename(suffix string) string {
 	digits := digitCount(p.book.PageCount)
 	if p.OtherPageNo > 0 { // two-page connected
-		fileFmt := fmt.Sprintf("page-%%0%dd-%%0%dd", digits, digits)
-		return fmt.Sprintf(fileFmt, p.PageNo, p.OtherPageNo)
+		fileFmt := fmt.Sprintf("page-%%0%dd-%%0%dd%%s", digits, digits)
+		return fmt.Sprintf(fileFmt, p.PageNo, p.OtherPageNo, suffix)
 	} else {
-		fileFmt := fmt.Sprintf("page-%%0%dd", digits)
-		return fmt.Sprintf(fileFmt, p.PageNo)
+		fileFmt := fmt.Sprintf("page-%%0%dd%%s", digits)
+		return fmt.Sprintf(fileFmt, p.PageNo, suffix)
 	}
+}
+
+func (p Page) Filepath(dir string, suffix string) string {
+	return fmt.Sprintf("%s/%s", dir, p.Filename(suffix))
 }
 
 func (p *Page) LeftRight(other *Page) (left *Page, right *Page) {
@@ -74,12 +78,12 @@ func (p *Page) LeftRight(other *Page) (left *Page, right *Page) {
 	return
 }
 
-func (p Page) WriteFile(filename string) error {
+func (p Page) WriteFile(dir string) (string, error) {
 	// Save as raw image
 	log.Printf("[Save] Writing to filesystem")
-	outFilename := fmt.Sprintf("%s.png", filename)
-	if err := p.mw.WriteImage(outFilename); err != nil {
-		return fmt.Errorf("writing page to image file %s: %w", outFilename, err)
+	filename := p.Filepath(dir, ".png")
+	if err := p.mw.WriteImage(filename); err != nil {
+		return "", fmt.Errorf("writing page to image file %s: %w", filename, err)
 	}
-	return nil
+	return filename, nil
 }

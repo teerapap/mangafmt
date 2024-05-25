@@ -21,7 +21,7 @@ type TrimConfig struct {
 	Margin   int
 }
 
-func (p *Page) Trim(cfg TrimConfig, fuzzP float64, outFile string) error {
+func (p *Page) Trim(cfg TrimConfig, fuzzP float64, workDir string) error {
 	if !cfg.Enabled {
 		return nil
 	}
@@ -31,7 +31,7 @@ func (p *Page) Trim(cfg TrimConfig, fuzzP float64, outFile string) error {
 	bgColor := p.book.Config.BgColor
 
 	// write tmp file
-	tmpFile := fmt.Sprintf("%s.trimming.png", outFile)
+	tmpFile := p.Filepath(workDir, ".trimming.png")
 	if err := p.mw.WriteImage(tmpFile); err != nil {
 		return fmt.Errorf("writing tmp file for trimming: %w", err)
 	}

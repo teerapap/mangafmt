@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/teerapap/mangafmt/internal/book"
+	"github.com/teerapap/mangafmt/internal/book/format"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
 	"gopkg.in/gographics/imagick.v2/imagick"
@@ -23,6 +25,8 @@ var trimConfig book.TrimConfig
 var connConfig book.ConnectConfig
 var targetSize book.Size
 var grayscale bool
+var outputFile string
+var outputFormat format.OutputFormat
 
 func init() {
 	flag.Usage = func() {
@@ -51,6 +55,7 @@ func init() {
 	flag.UintVar(&targetSize.Width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "output screen heigt (pixel)")
 	flag.BoolVar(&grayscale, "grayscale", true, "convert to grayscale images")
+	flag.StringVar(&outputFile, "output", "manga.cbz", "output file. The file extension must be in this supported formats\n\t- *.cbz\nEmpty string skips packaging and do not clean the processed page in work directory.")
 }
 
 func helpUsage(msg string) {
@@ -62,6 +67,20 @@ func helpUsage(msg string) {
 	if msg != "" {
 		os.Exit(1)
 	}
+}
+
+func parseOutputFileArg() {
+	if len(outputFile) == 0 {
+		outputFormat = format.RAW
+		return
+	}
+	for _, f := range format.AllOutputFormats() {
+		if strings.HasSuffix(outputFile, fmt.Sprintf(".%s", f)) {
+			outputFormat = f
+			return
+		}
+	}
+	helpUsage(fmt.Sprintf("Unrecognized format from output filename %s", outputFile))
 }
 
 // Helper functions
@@ -90,6 +109,7 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
+	parseOutputFileArg()
 	start = max(start, 1)
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
 	fuzzP = max(min(fuzzP, 1.0), 0.0)
@@ -130,30 +150,41 @@ func main() {
 		log.Printf("Start processing. Total %d pages.", end-start+1)
 	}
 	log.SetLogIndent(1)
-	outPage := start
+
+	outPages := make([]format.Page, 0, theBook.PageCount)
 	for page := start; page <= end; {
 		log.Printf("Processing page....(%d/%d)", page, end)
 		log.SetLogIndent(2)
 
-		page += util.Must1(processEachPage(theBook, page, end))(fmt.Sprintf("processing page %d", page))
-		outPage++
-		log.Verbosef("next input page = %d, next output page = %d", page, outPage)
+		outPage, processed := util.Must2(processEachPage(theBook, page, end))(fmt.Sprintf("processing page %d", page))
+		outPages = append(outPages, *outPage)
+		page += processed
+		log.Verbosef("next input page = %d, next output page = %d", page, len(outPages))
 
 		log.SetLogIndent(1)
 		log.Print("")
 	}
 	log.SetLogIndent(0)
 	log.Printf("Done processing.")
-	log.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, outPage-start)
+	log.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, len(outPages))
 
-	// TODO: Packaging
+	// Packaging
+	switch outputFormat {
+	case format.RAW:
+		log.Print("Skip packaging. Leave raw output in work directory")
+		return
+	case format.CBZ:
+		util.Must(format.SaveAsCBZ(outPages, outputFile))("saving in cbz format")
+		util.Must(os.RemoveAll(workDir))("cleaning work directory after done packaging")
+	}
+
 }
 
-func processEachPage(theBook *book.Book, pageNo int, end int) (int, error) {
+func processEachPage(theBook *book.Book, pageNo int, end int) (*format.Page, int, error) {
 	processed := 0
 	current, err := theBook.LoadPage(pageNo)
 	if err != nil {
-		return 0, fmt.Errorf("loading page %d: %w", pageNo, err)
+		return nil, 0, fmt.Errorf("loading page %d: %w", pageNo, err)
 	}
 	defer current.Destroy()
 
@@ -164,7 +195,7 @@ func processEachPage(theBook *book.Book, pageNo int, end int) (int, error) {
 		// Read next page
 		next, err := theBook.LoadPage(pageNo + 1)
 		if err != nil {
-			return 0, fmt.Errorf("loading next page %d: %w", pageNo+1, err)
+			return nil, 0, fmt.Errorf("loading next page %d: %w", pageNo+1, err)
 		}
 		defer next.Destroy()
 
@@ -172,46 +203,45 @@ func processEachPage(theBook *book.Book, pageNo int, end int) (int, error) {
 		left, right := current.LeftRight(next)
 		connected, err := left.CanConnect(right, connConfig)
 		if err != nil {
-			return 0, fmt.Errorf("checking if two pages are connected: %w", err)
+			return nil, 0, fmt.Errorf("checking if two pages are connected: %w", err)
 		}
 		if connected {
 			// connect two pages
 			if current, err = left.Connect(right); err != nil {
-				return 0, fmt.Errorf("connecting two pages: %w", err)
+				return nil, 0, fmt.Errorf("connecting two pages: %w", err)
 			}
 			defer current.Destroy()
 			processed += 1
 		}
 	}
 
-	// Prepare output file
-	err = os.MkdirAll(fmt.Sprintf("%s/Images", workDir), 0750)
-	if err != nil {
-		return 0, fmt.Errorf("creating images directory: %w", err)
-	}
-	outFile := fmt.Sprintf("%s/Images/%s", workDir, current.Filename())
-
 	// Trim image with fuzz
-	if err := current.Trim(trimConfig, fuzzP, outFile); err != nil {
-		return 0, fmt.Errorf("trimming page: %w", err)
+	if err := current.Trim(trimConfig, fuzzP, workDir); err != nil {
+		return nil, 0, fmt.Errorf("trimming page: %w", err)
 	}
 
 	// Resize page to aspect fit screen
 	if err := current.ResizeToFit(targetSize); err != nil {
-		return 0, fmt.Errorf("resizing page to fit to screen: %w", err)
+		return nil, 0, fmt.Errorf("resizing page to fit to screen: %w", err)
 	}
 
 	// Convert to grayscale
 	if grayscale {
 		if err := current.ConvertToGrayscale(); err != nil {
-			return 0, fmt.Errorf("converting page to grayscale: %w", err)
+			return nil, 0, fmt.Errorf("converting page to grayscale: %w", err)
 		}
 	}
 
 	// Write to filesystem
-	if err := current.WriteFile(outFile); err != nil {
-		return 0, fmt.Errorf("writing to filesystem: %w", err)
+	outFile, err := current.WriteFile(workDir)
+	if err != nil {
+		return nil, 0, fmt.Errorf("writing to filesystem: %w", err)
 	}
 
-	return processed, nil
+	outPage := format.Page{
+		Filepath: outFile,
+		Size:     current.Size(),
+	}
+
+	return &outPage, processed, nil
 }
