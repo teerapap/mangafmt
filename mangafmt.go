@@ -149,22 +149,22 @@ func main() {
 	} else {
 		log.Printf("Start processing. Total %d pages.", end-start+1)
 	}
-	log.SetLogIndent(1)
+	log.Indent()
 
 	outPages := make([]format.Page, 0, theBook.PageCount)
 	for page := start; page <= end; {
 		log.Printf("Processing page....(%d/%d)", page, end)
-		log.SetLogIndent(2)
+		log.Indent()
 
 		outPage, processed := util.Must2(processEachPage(theBook, page, end))(fmt.Sprintf("processing page %d", page))
 		outPages = append(outPages, *outPage)
 		page += processed
 		log.Verbosef("next input page = %d, next output page = %d", page, len(outPages))
 
-		log.SetLogIndent(1)
+		log.Unindent()
 		log.Print("")
 	}
-	log.SetLogIndent(0)
+	log.Unindent()
 	log.Printf("Done processing.")
 	log.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, len(outPages))
 

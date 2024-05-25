@@ -17,6 +17,8 @@ import (
 )
 
 func SaveAsCBZ(pages []Page, outFile string) error {
+	defer log.SetIndentLevel(log.IndentLevel()) // reset indent level after return
+
 	log.Printf("Start packaging in CBZ format to %s", outFile)
 
 	zipFile, err := os.Create(outFile)
@@ -29,10 +31,10 @@ func SaveAsCBZ(pages []Page, outFile string) error {
 	defer w.Close()
 
 	pageCount := len(pages)
-	log.SetLogIndent(1)
+	log.Indent()
 	for i, page := range pages {
 		log.Printf("Packaging page....(%d/%d)", i+1, pageCount)
-		log.SetLogIndent(2)
+		log.Indent()
 
 		pageFile, err := os.Open(page.Filepath)
 		if err != nil {
@@ -61,11 +63,11 @@ func SaveAsCBZ(pages []Page, outFile string) error {
 			return fmt.Errorf("adding page file to final file: %w", err)
 		}
 
-		log.SetLogIndent(1)
+		log.Unindent()
 		log.Print("")
 
 	}
-	log.SetLogIndent(0)
+	log.Unindent()
 	log.Printf("Done packaging.")
 	return nil
 }

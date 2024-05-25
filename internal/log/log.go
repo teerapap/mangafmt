@@ -19,10 +19,24 @@ func SetVerbose(enabled bool) {
 	verbose = enabled
 }
 
+var indentLevel int = 0
 var indent string
 
-func SetLogIndent(level uint) {
-	indent = strings.Repeat(" ", int(level)*4)
+func IndentLevel() int {
+	return indentLevel
+}
+
+func SetIndentLevel(level int) {
+	indentLevel = level
+	indent = strings.Repeat(" ", int(max(0, level))*4)
+}
+
+func Indent() {
+	SetIndentLevel(indentLevel + 1)
+}
+
+func Unindent() {
+	SetIndentLevel(indentLevel - 1)
 }
 
 func Verbose(str string) {
