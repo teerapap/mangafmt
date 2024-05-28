@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/teerapap/mangafmt/internal/log"
 )
@@ -66,5 +68,30 @@ func CreateWorkDir(path *string, clean bool) (bool, error) {
 			return false, err
 		}
 		return false, nil
+	}
+}
+
+func IsReadableFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return path, err
+	}
+	defer f.Close()
+	return filepath.Abs(path)
+}
+
+func IsWritableFile(path string) (string, error) {
+	return filepath.Abs(path)
+}
+
+func NameWithoutExt(filename string) string {
+	return strings.TrimSuffix(filename, filepath.Ext(filename))
+}
+
+func ReplaceExt(path string, ext string) string {
+	if ext == "" {
+		return NameWithoutExt(path)
+	} else {
+		return fmt.Sprintf("%s.%s", NameWithoutExt(path), ext)
 	}
 }

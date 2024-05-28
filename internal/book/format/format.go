@@ -8,6 +8,9 @@
 package format
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/teerapap/mangafmt/internal/book"
 )
 
@@ -34,7 +37,25 @@ func (f OutputFormat) String() string {
 	}
 }
 
-func AllOutputFormats() []OutputFormat {
-	// exclude RAW
-	return []OutputFormat{CBZ}
+func (f OutputFormat) Ext() string {
+	switch f {
+	case RAW:
+		return ""
+	case CBZ:
+		return "cbz"
+	default:
+		return ""
+	}
+}
+
+func (f *OutputFormat) Set(val string) error {
+	switch strings.ToLower(val) {
+	case "raw":
+		*f = RAW
+	case "cbz":
+		*f = CBZ
+	default:
+		return fmt.Errorf("Unknown format: %s", val)
+	}
+	return nil
 }

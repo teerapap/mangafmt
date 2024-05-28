@@ -55,7 +55,8 @@ func init() {
 	flag.UintVar(&targetSize.Width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "output screen heigt (pixel)")
 	flag.BoolVar(&grayscale, "grayscale", true, "convert to grayscale images")
-	flag.StringVar(&outputFile, "output", "manga.cbz", "output file. The file extension must be in this supported formats\n\t- *.cbz\nEmpty string skips packaging and do not clean the processed page in work directory.")
+	flag.Var(&outputFormat, "format", "output file format. The supported formats\n\t- raw (default)\n\t- cbz")
+	flag.StringVar(&outputFile, "output", "", "output file. Empty string means using the same file name as input file")
 }
 
 func helpUsage(msg string) {
@@ -67,20 +68,6 @@ func helpUsage(msg string) {
 	if msg != "" {
 		os.Exit(1)
 	}
-}
-
-func parseOutputFileArg() {
-	if len(outputFile) == 0 {
-		outputFormat = format.RAW
-		return
-	}
-	for _, f := range format.AllOutputFormats() {
-		if strings.HasSuffix(outputFile, fmt.Sprintf(".%s", f)) {
-			outputFormat = f
-			return
-		}
-	}
-	helpUsage(fmt.Sprintf("Unrecognized format from output filename %s", outputFile))
 }
 
 // Helper functions
@@ -99,23 +86,31 @@ func main() {
 
 	// Parse command-line
 	flag.Parse()
-	bookFile := flag.Arg(0)
+	inputFile := flag.Arg(0)
 	log.SetVerbose(verbose)
 
 	if help {
 		flag.Usage()
 		os.Exit(0)
-	} else if len(bookFile) == 0 {
+	} else if len(inputFile) == 0 {
 		flag.Usage()
 		os.Exit(1)
 	}
-	parseOutputFileArg()
+	inputFile = util.Must1(util.IsReadableFile(inputFile))("input file path")
+	log.Verbosef("Input: %s", inputFile)
+	outputFile = strings.TrimSpace(outputFile)
+	if len(outputFile) == 0 {
+		outputFile = util.ReplaceExt(inputFile, outputFormat.Ext())
+	} else {
+		outputFile = util.Must1(util.IsWritableFile(outputFile))("output file path")
+	}
+	log.Verbosef("Output: %s", outputFile)
 	start = max(start, 1)
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
 	fuzzP = max(min(fuzzP, 1.0), 0.0)
 
-	// Get number of pages
-	theBook := util.Must1(book.NewBook(bookFile, bookConfig))("loading book")
+	// Load input book file
+	theBook := util.Must1(book.NewBook(inputFile, bookConfig))("loading book")
 	log.Printf("Total Number of Pages: %d", theBook.PageCount)
 	if end <= 0 {
 		end = theBook.PageCount
@@ -127,11 +122,9 @@ func main() {
 	}
 
 	// Create work dir
-	isTmp := util.Must1(util.CreateWorkDir(&workDir, true))("creating work directory")
+	util.Must1(util.CreateWorkDir(&workDir, true))("creating work directory")
+	defer os.RemoveAll(workDir)
 	log.Verbosef("Work directory: %s", workDir)
-	if isTmp {
-		defer os.RemoveAll(workDir)
-	}
 
 	// Initialize Imagemagick
 	log.Verbose("Initializing Imagemagick")
@@ -171,11 +164,10 @@ func main() {
 	// Packaging
 	switch outputFormat {
 	case format.RAW:
-		log.Print("Skip packaging. Leave raw output in work directory")
+		util.Must(format.SaveAsRaw(outPages, outputFile))("saving in raw format")
 		return
 	case format.CBZ:
 		util.Must(format.SaveAsCBZ(outPages, outputFile))("saving in cbz format")
-		util.Must(os.RemoveAll(workDir))("cleaning work directory after done packaging")
 	}
 
 }
