@@ -39,7 +39,6 @@ func SaveAsRaw(pages []Page, outDir string) error {
 		}
 
 		log.Unindent()
-		log.Print("")
 	}
 	log.Unindent()
 	log.Printf("Done packaging.")

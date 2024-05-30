@@ -164,7 +164,6 @@ func main() {
 		log.Verbosef("next input page = %d, next output page = %d", page, len(outPages))
 
 		log.Unindent()
-		log.Print("")
 	}
 	log.Unindent()
 	log.Printf("Done processing.")
@@ -181,7 +180,7 @@ func main() {
 	case format.KEPUB:
 		util.Must(format.SaveAsKEPUB(theBook, outPages, outputFile))("saving in kepub format")
 	}
-
+	log.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, len(outPages))
 }
 
 func processEachPage(theBook *book.Book, pageNo int, end int) (*format.Page, int, error) {

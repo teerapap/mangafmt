@@ -21,12 +21,19 @@ func SetVerbose(enabled bool) {
 
 var indentLevel int = 0
 var indent string
+var newlineAfterUnindent = false
 
 func IndentLevel() int {
 	return indentLevel
 }
 
 func SetIndentLevel(level int) {
+	if level != indentLevel {
+		if level < indentLevel && newlineAfterUnindent {
+			fmt.Println("")
+		}
+		newlineAfterUnindent = false
+	}
 	indentLevel = level
 	indent = strings.Repeat(" ", int(max(0, level))*4)
 }
@@ -46,6 +53,7 @@ func Verbose(str string) {
 func Verbosef(format string, v ...any) {
 	if verbose {
 		fmt.Fprintf(os.Stdout, "%sVerbose: %s\n", indent, fmt.Sprintf(format, v...))
+		newlineAfterUnindent = true
 	}
 }
 
@@ -55,6 +63,7 @@ func Print(str string) {
 
 func Printf(format string, v ...any) {
 	fmt.Fprintf(os.Stdout, "%s%s\n", indent, fmt.Sprintf(format, v...))
+	newlineAfterUnindent = true
 }
 
 func Error(str string) {
@@ -63,6 +72,7 @@ func Error(str string) {
 
 func Errorf(format string, v ...any) {
 	fmt.Fprintf(os.Stderr, "%sError: %s\n", indent, fmt.Sprintf(format, v...))
+	newlineAfterUnindent = true
 }
 
 func Panic(str string) {

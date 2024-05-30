@@ -42,7 +42,6 @@ func SaveAsCBZ(pages []Page, outFile string) error {
 		}
 
 		log.Unindent()
-		log.Print("")
 	}
 	log.Unindent()
 	log.Printf("Done packaging.")
