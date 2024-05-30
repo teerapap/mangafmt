@@ -17,6 +17,10 @@ import (
 	"github.com/teerapap/mangafmt/internal/log"
 )
 
+// This variable is overridden with go build command for official release
+// go build -ldflags="-X github.com/teerapap/mangafmt/internal/util.AppVersion=`git describe`"
+var AppVersion = "devel"
+
 func Must(err error) func(doing string) {
 	return func(doing string) {
 		if err != nil {

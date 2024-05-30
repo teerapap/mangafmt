@@ -16,6 +16,7 @@ import (
 // Command-line Parsing
 var help bool
 var verbose bool
+var version bool
 var workDir string
 var start int
 var end int
@@ -36,6 +37,7 @@ func init() {
 	flag.BoolVar(&help, "h", false, "show help")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output")
 	flag.BoolVar(&verbose, "v", false, "verbose output")
+	flag.BoolVar(&version, "version", false, "show version")
 	flag.StringVar(&workDir, "work-dir", "", "work directory path. Empty string means using system temp path")
 	flag.IntVar(&start, "start", 1, "page start. (non-negative means first page)")
 	flag.IntVar(&end, "end", -1, "page end. (non-negative means last page)")
@@ -70,6 +72,10 @@ func helpUsage(msg string) {
 	}
 }
 
+func showVersion() {
+	fmt.Printf("mangafmt-%s\n", util.AppVersion)
+}
+
 // Helper functions
 
 func handleExit() {
@@ -91,6 +97,9 @@ func main() {
 
 	if help {
 		flag.Usage()
+		os.Exit(0)
+	} else if version {
+		showVersion()
 		os.Exit(0)
 	} else if len(inputFile) == 0 {
 		flag.Usage()
