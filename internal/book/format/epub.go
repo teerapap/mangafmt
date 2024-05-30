@@ -11,6 +11,7 @@ import (
 	"archive/zip"
 	_ "embed"
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
 	"time"
@@ -81,7 +82,7 @@ func createEpub(theBook *book.Book, pages []Page) EpubBook {
 
 	epub.BookID = fmt.Sprintf("urn:uuid:%s", uuid.New())
 	epub.Language = "en-US"
-	epub.Title = theBook.Title
+	epub.Title = html.EscapeString(theBook.Title)
 	epub.TotalPageCount = len(pages)
 	epub.IsRTL = theBook.Config.IsRTL
 	appVersion := fmt.Sprintf("mangafmt-%s", util.AppVersion)

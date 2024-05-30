@@ -11,11 +11,11 @@ import (
 	"archive/zip"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"text/template"
 
 	"github.com/teerapap/mangafmt/internal/log"
 )
@@ -54,7 +54,7 @@ func Assert(cond bool, errMsg string) {
 }
 
 func CreateWorkDir(path *string, clean bool) (bool, error) {
-	if *path == "" {
+	if strings.TrimSpace(*path) == "" {
 		// create temp directory
 		tmpDir, err := os.MkdirTemp("", "mangafmt-")
 		if err != nil {

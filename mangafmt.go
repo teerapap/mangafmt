@@ -20,6 +20,7 @@ var version bool
 var workDir string
 var start int
 var end int
+var bookTitle string
 var bookConfig book.BookConfig
 var fuzzP float64
 var trimConfig book.TrimConfig
@@ -38,9 +39,10 @@ func init() {
 	flag.BoolVar(&verbose, "verbose", false, "verbose output")
 	flag.BoolVar(&verbose, "v", false, "verbose output")
 	flag.BoolVar(&version, "version", false, "show version")
-	flag.StringVar(&workDir, "work-dir", "", "work directory path. Empty string means using system temp path")
+	flag.StringVar(&workDir, "work-dir", "", "work directory path. Unspecified or blank means using system temp path")
 	flag.IntVar(&start, "start", 1, "page start. (non-negative means first page)")
 	flag.IntVar(&end, "end", -1, "page end. (non-negative means last page)")
+	flag.StringVar(&bookTitle, "title", "", "Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
 	flag.Float64Var(&bookConfig.Density, "density", 300.0, "output density (DPI)")
 	flag.StringVar(&bookConfig.BgColor, "background", "white", "background color")
 	flag.BoolVar(&bookConfig.IsRTL, "rtl", false, "right-to-left read direction (ex. Japanese manga)")
@@ -58,7 +60,7 @@ func init() {
 	flag.UintVar(&targetSize.Height, "height", 1680, "output screen heigt (pixel)")
 	flag.BoolVar(&grayscale, "grayscale", true, "convert to grayscale images")
 	flag.Var(&outputFormat, "format", "output file format. The supported formats\n\t- raw (default)\n\t- cbz")
-	flag.StringVar(&outputFile, "output", "", "output file. Empty string means using the same file name as input file")
+	flag.StringVar(&outputFile, "output", "", "output file. Unspecified or blank means using the same file name as input file")
 }
 
 func helpUsage(msg string) {
@@ -101,14 +103,14 @@ func main() {
 	} else if version {
 		showVersion()
 		os.Exit(0)
-	} else if len(inputFile) == 0 {
+	} else if inputFile == "" {
 		flag.Usage()
 		os.Exit(1)
 	}
 	inputFile = util.Must1(util.IsReadableFile(inputFile))("input file path")
 	log.Verbosef("Input: %s", inputFile)
 	outputFile = strings.TrimSpace(outputFile)
-	if len(outputFile) == 0 {
+	if outputFile == "" {
 		outputFile = util.ReplaceExt(inputFile, outputFormat.Ext())
 	} else {
 		outputFile = util.Must1(util.IsWritableFile(outputFile))("output file path")
@@ -120,6 +122,10 @@ func main() {
 
 	// Load input book file
 	theBook := util.Must1(book.NewBook(inputFile, bookConfig))("loading book")
+	bookTitle = strings.TrimSpace(bookTitle)
+	if bookTitle != "" {
+		theBook.Title = bookTitle
+	}
 	log.Printf("Total Number of Pages: %d", theBook.PageCount)
 	if end <= 0 {
 		end = theBook.PageCount
