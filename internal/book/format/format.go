@@ -15,8 +15,10 @@ import (
 )
 
 type Page struct {
-	Filepath string
-	Size     book.Size
+	Id        string
+	Filepath  string
+	MediaType string
+	Size      book.Size
 }
 
 type OutputFormat int
@@ -24,6 +26,8 @@ type OutputFormat int
 const (
 	RAW = iota
 	CBZ
+	EPUB
+	KEPUB
 )
 
 func (f OutputFormat) String() string {
@@ -32,6 +36,10 @@ func (f OutputFormat) String() string {
 		return "raw"
 	case CBZ:
 		return "cbz"
+	case EPUB:
+		return "epub"
+	case KEPUB:
+		return "kepub"
 	default:
 		return "unknown"
 	}
@@ -43,6 +51,10 @@ func (f OutputFormat) Ext() string {
 		return ""
 	case CBZ:
 		return "cbz"
+	case EPUB:
+		return "epub"
+	case KEPUB:
+		return "kepub"
 	default:
 		return ""
 	}
@@ -54,6 +66,10 @@ func (f *OutputFormat) Set(val string) error {
 		*f = RAW
 	case "cbz":
 		*f = CBZ
+	case "epub":
+		*f = EPUB
+	case "kepub":
+		*f = KEPUB
 	default:
 		return fmt.Errorf("Unknown format: %s", val)
 	}

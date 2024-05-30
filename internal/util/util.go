@@ -8,11 +8,14 @@
 package util
 
 import (
+	"archive/zip"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"github.com/teerapap/mangafmt/internal/log"
 )
@@ -98,4 +101,55 @@ func ReplaceExt(path string, ext string) string {
 	} else {
 		return fmt.Sprintf("%s.%s", NameWithoutExt(path), ext)
 	}
+}
+
+func CreateTemplate(name string, t string) *template.Template {
+	return template.Must(template.New(name).Parse(t))
+}
+
+func WriteFileToZip(w *zip.Writer, path string, tm *template.Template, data any) error {
+	out, err := w.Create(path)
+	if err != nil {
+		return fmt.Errorf("creating file(%s): %w", path, err)
+	}
+
+	err = tm.Execute(out, data)
+	if err != nil {
+		return fmt.Errorf("generating file(%s) from template: %w", path, err)
+	}
+
+	return nil
+}
+
+func CopyFileToZip(w *zip.Writer, dst string, src string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("opening src file: %w", err)
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("getting src file info: %w", err)
+	}
+
+	header, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return fmt.Errorf("converting src file info to file header: %w", err)
+	}
+	header.Method = zip.Deflate
+	if dst != "" {
+		header.Name = dst
+	}
+
+	out, err := w.CreateHeader(header)
+	if err != nil {
+		return fmt.Errorf("creating file entry in the zip file: %w", err)
+	}
+
+	_, err = io.Copy(out, f)
+	if err != nil {
+		return fmt.Errorf("copy src file into the zip file: %w", err)
+	}
+	return nil
 }

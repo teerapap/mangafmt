@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" unique-identifier="BookID" xmlns="http://www.idpf.org/2007/opf">
+    <metadata xmlns:opf="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/">
+        <dc:title>{{ .Title }}</dc:title>
+        <dc:language>{{ .Language }}</dc:language>
+        <dc:identifier id="BookID">{{ .BookID }}</dc:identifier>
+        <dc:contributor id="contributor">{{ .Contributor }}</dc:contributor>
+        <dc:creator>{{ .Creator }}</dc:creator>
+        <meta property="dcterms:modified">{{ .ModifiedDatetime }}</meta>
+		<meta name="{{ .Cover.Id }}" content="cover"/>
+        <meta property="rendition:orientation">portrait</meta>
+        <meta property="rendition:spread">portrait</meta>
+        <meta property="rendition:layout">pre-paginated</meta>
+    </metadata>
+    <manifest>
+        <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+        <item id="nav" href="nav.xhtml" properties="nav" media-type="application/xhtml+xml"/>
+        <item id="{{ .Cover.Id }}" href="{{ .Cover.Url }}" media-type="{{ .Cover.MediaType }}" properties="cover-image"/>
+        {{range .Pages}}
+        <item id="{{ .Xhtml.Id }}" href="{{ .Xhtml.Url }}" media-type="{{ .Xhtml.MediaType }}"/>
+        <item id="{{ .Image.Id }}" href="{{ .Image.Url }}" media-type="{{ .Image.MediaType }}"/>
+        {{end}}
+        <item id="css" href="Text/style.css" media-type="text/css"/>
+    </manifest>
+    <spine page-progression-direction="{{if .IsRTL }}rtl{{else}}ltr{{end}}" toc="ncx">
+        {{range .Pages}}
+        <itemref idref="{{ .Xhtml.Id }}"/>
+        {{end}}
+    </spine>
+</package>

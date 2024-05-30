@@ -78,12 +78,12 @@ func (p *Page) LeftRight(other *Page) (left *Page, right *Page) {
 	return
 }
 
-func (p Page) WriteFile(dir string) (string, error) {
+func (p Page) WriteFile(dir string) (string, string, error) {
 	// Save as raw image
 	log.Printf("[Save] Writing to filesystem")
 	filename := p.Filepath(dir, ".png")
 	if err := p.mw.WriteImage(filename); err != nil {
-		return "", fmt.Errorf("writing page to image file %s: %w", filename, err)
+		return "", "", fmt.Errorf("writing page to image file %s: %w", filename, err)
 	}
-	return filename, nil
+	return filename, "image/png", nil
 }

@@ -174,9 +174,12 @@ func main() {
 	switch outputFormat {
 	case format.RAW:
 		util.Must(format.SaveAsRaw(outPages, outputFile))("saving in raw format")
-		return
 	case format.CBZ:
 		util.Must(format.SaveAsCBZ(outPages, outputFile))("saving in cbz format")
+	case format.EPUB:
+		util.Must(format.SaveAsEPUB(theBook, outPages, outputFile))("saving in epub format")
+	case format.KEPUB:
+		util.Must(format.SaveAsKEPUB(theBook, outPages, outputFile))("saving in kepub format")
 	}
 
 }
@@ -234,14 +237,16 @@ func processEachPage(theBook *book.Book, pageNo int, end int) (*format.Page, int
 	}
 
 	// Write to filesystem
-	outFile, err := current.WriteFile(workDir)
+	outFile, mediaType, err := current.WriteFile(workDir)
 	if err != nil {
 		return nil, 0, fmt.Errorf("writing to filesystem: %w", err)
 	}
 
 	outPage := format.Page{
-		Filepath: outFile,
-		Size:     current.Size(),
+		Id:        current.Filename(""),
+		Filepath:  outFile,
+		MediaType: mediaType,
+		Size:      current.Size(),
 	}
 
 	return &outPage, processed, nil

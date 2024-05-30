@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+    <head>
+        <title>{{ .Title }}</title>
+        <link href="style.css" type="text/css" rel="stylesheet"/>
+        <meta name="viewport" content="width={{ .Width }}, height={{ .Height }}"/>
+    </head>
+    <body style="background-color:{{ .BgColor }};">
+        <div style="text-align:center;top:0.0%;">
+            <img width="{{ .Width }}" height="{{ .Height }}" src="../{{ .Image.Url }}"/>
+        </div>
+    </body>
+</html>

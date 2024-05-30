@@ -10,13 +10,16 @@ package book
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/teerapap/mangafmt/internal/util"
 	"gopkg.in/gographics/imagick.v2/imagick"
 	"rsc.io/pdf"
 )
 
 type Book struct {
 	Filepath  string
+	Title     string
 	PageCount int
 	Config    BookConfig
 }
@@ -27,9 +30,9 @@ type BookConfig struct {
 	BgColor string
 }
 
-func NewBook(filepath string, config BookConfig) (*Book, error) {
+func NewBook(path string, config BookConfig) (*Book, error) {
 
-	f, err := os.Open(filepath)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("opening input pdf file: %w", err)
 	}
@@ -42,9 +45,11 @@ func NewBook(filepath string, config BookConfig) (*Book, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading input pdf file: %w", err)
 	}
+	title := util.NameWithoutExt(filepath.Base(path))
 
 	return &Book{
-		Filepath:  filepath,
+		Filepath:  path,
+		Title:     title,
 		PageCount: r.NumPage(),
 		Config:    config,
 	}, nil

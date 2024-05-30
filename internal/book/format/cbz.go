@@ -10,10 +10,10 @@ package format
 import (
 	"archive/zip"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/teerapap/mangafmt/internal/log"
+	"github.com/teerapap/mangafmt/internal/util"
 )
 
 func SaveAsCBZ(pages []Page, outFile string) error {
@@ -36,31 +36,9 @@ func SaveAsCBZ(pages []Page, outFile string) error {
 		log.Printf("Packaging page....(%d/%d)", i+1, pageCount)
 		log.Indent()
 
-		pageFile, err := os.Open(page.Filepath)
+		err := util.CopyFileToZip(w, "", page.Filepath)
 		if err != nil {
-			return fmt.Errorf("opening page file: %w", err)
-		}
-		defer pageFile.Close()
-
-		info, err := pageFile.Stat()
-		if err != nil {
-			return fmt.Errorf("getting page file info: %w", err)
-		}
-
-		header, err := zip.FileInfoHeader(info)
-		if err != nil {
-			return fmt.Errorf("converting page file info to file header: %w", err)
-		}
-		header.Method = zip.Deflate
-
-		out, err := w.CreateHeader(header)
-		if err != nil {
-			return fmt.Errorf("creating page file entry in the format: %w", err)
-		}
-
-		_, err = io.Copy(out, pageFile)
-		if err != nil {
-			return fmt.Errorf("adding page file to final file: %w", err)
+			return fmt.Errorf("copying page file to the output file: %w", err)
 		}
 
 		log.Unindent()
