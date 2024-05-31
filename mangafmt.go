@@ -26,7 +26,8 @@ var fuzzP float64
 var trimConfig book.TrimConfig
 var connConfig book.ConnectConfig
 var targetSize book.Size
-var grayscale bool
+var grayscaleStr string
+var grayscalePR = book.NewPageRange()
 var outputFile string
 var outputFormat format.OutputFormat
 
@@ -57,7 +58,7 @@ func init() {
 	flag.Float64Var(&connConfig.LrDistort, "connect-lr-distortion", 0.4, "two pages are considered connected if the distortion between their edges are less within this threshold (percentage)[0.0-1.0]")
 	flag.UintVar(&targetSize.Width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "output screen heigt (pixel)")
-	flag.BoolVar(&grayscale, "grayscale", true, "convert to grayscale images")
+	flag.StringVar(&grayscaleStr, "grayscale", "2-", "page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion")
 	flag.Var(&outputFormat, "format", "output file format. The supported formats\n\t- raw (default)\n\t- cbz")
 	flag.StringVar(&outputFile, "output", "", "output file. Unspecified or blank means using the same file name as input file")
 }
@@ -128,6 +129,9 @@ func main() {
 
 	// Parse page range arguments
 	util.Must(pageRange.Parse(pageRangeStr, theBook.PageCount))(fmt.Sprintf("parsing page range(%s)", pageRangeStr))
+	if strings.ToLower(grayscaleStr) != "false" {
+		util.Must(grayscalePR.Parse(grayscaleStr, theBook.PageCount))(fmt.Sprintf("parsing grayscale page range(%s)", grayscaleStr))
+	}
 
 	// Create work dir
 	util.Must1(util.CreateWorkDir(&workDir, true))("creating work directory")
@@ -238,7 +242,7 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*forma
 	}
 
 	// Convert to grayscale
-	if grayscale {
+	if grayscalePR.Contains(current.PageNo) || (current.OtherPageNo > 0 && grayscalePR.Contains(current.OtherPageNo)) {
 		if err := current.ConvertToGrayscale(); err != nil {
 			return nil, 0, fmt.Errorf("converting page to grayscale: %w", err)
 		}
