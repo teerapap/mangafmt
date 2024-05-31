@@ -18,8 +18,8 @@ var help bool
 var verbose bool
 var version bool
 var workDir string
-var start int
-var end int
+var pageRangeStr string
+var pageRange = book.NewPageRange()
 var bookTitle string
 var bookConfig book.BookConfig
 var fuzzP float64
@@ -40,8 +40,7 @@ func init() {
 	flag.BoolVar(&verbose, "v", false, "verbose output")
 	flag.BoolVar(&version, "version", false, "show version")
 	flag.StringVar(&workDir, "work-dir", "", "work directory path. Unspecified or blank means using system temp path")
-	flag.IntVar(&start, "start", 1, "page start. (non-negative means first page)")
-	flag.IntVar(&end, "end", -1, "page end. (non-negative means last page)")
+	flag.StringVar(&pageRangeStr, "pages", "1-", "page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end.")
 	flag.StringVar(&bookTitle, "title", "", "Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
 	flag.Float64Var(&bookConfig.Density, "density", 300.0, "output density (DPI)")
 	flag.StringVar(&bookConfig.BgColor, "background", "white", "background color")
@@ -116,7 +115,6 @@ func main() {
 		outputFile = util.Must1(util.IsWritableFile(outputFile))("output file path")
 	}
 	log.Verbosef("Output: %s", outputFile)
-	start = max(start, 1)
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
 	fuzzP = max(min(fuzzP, 1.0), 0.0)
 
@@ -127,14 +125,9 @@ func main() {
 		theBook.Title = bookTitle
 	}
 	log.Printf("Total Number of Pages: %d", theBook.PageCount)
-	if end <= 0 {
-		end = theBook.PageCount
-	}
-	if start > theBook.PageCount {
-		log.Panic("`--start` cannot exceeds total number of pages")
-	} else if start > end {
-		log.Panic("`--start` cannot be larger than `--end`")
-	}
+
+	// Parse page range arguments
+	util.Must(pageRange.Parse(pageRangeStr, theBook.PageCount))(fmt.Sprintf("parsing page range(%s)", pageRangeStr))
 
 	// Create work dir
 	util.Must1(util.CreateWorkDir(&workDir, true))("creating work directory")
@@ -152,28 +145,38 @@ func main() {
 	log.Verbose("Initialized Imagemagick")
 
 	// For loop each page
-	if start != 1 || end != theBook.PageCount {
-		log.Printf("Start processing from %d to %d to process. Total %d pages.", start, end, end-start+1)
+	partials := pageRange.PageCount() != theBook.PageCount
+	if partials {
+		log.Printf("Start processing page(s) in range %s. Total %d page(s).", pageRange, pageRange.PageCount())
 	} else {
-		log.Printf("Start processing. Total %d pages.", end-start+1)
+		log.Printf("Start processing. Total %d page(s).", pageRange.PageCount())
 	}
 	log.Indent()
 
 	outPages := make([]format.Page, 0, theBook.PageCount)
-	for page := start; page <= end; {
-		log.Printf("Processing page....(%d/%d)", page, end)
+	for page, i := 1, 1; page <= theBook.PageCount; {
+		if !pageRange.Contains(page) {
+			page += 1
+			continue
+		}
+		if partials {
+			log.Printf("Processing page %d....(%d/%d)", page, i, pageRange.PageCount())
+		} else {
+			log.Printf("Processing page....(%d/%d)", page, theBook.PageCount)
+		}
 		log.Indent()
 
-		outPage, processed := util.Must2(processEachPage(theBook, page, end))(fmt.Sprintf("processing page %d", page))
+		outPage, processed := util.Must2(processEachPage(theBook, pageRange, page))(fmt.Sprintf("processing page %d", page))
 		outPages = append(outPages, *outPage)
 		page += processed
+		i += processed
 		log.Verbosef("next input page = %d, next output page = %d", page, len(outPages))
 
 		log.Unindent()
 	}
 	log.Unindent()
 	log.Printf("Done processing.")
-	log.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, len(outPages))
+	log.Printf("Total Input %d page(s). Total Output %d pages(s).", pageRange.PageCount(), len(outPages))
 
 	// Packaging
 	switch outputFormat {
@@ -186,10 +189,10 @@ func main() {
 	case format.KEPUB:
 		util.Must(format.SaveAsKEPUB(theBook, outPages, outputFile))("saving in kepub format")
 	}
-	log.Printf("Total Input %d page(s). Total Output %d pages(s).", end-start+1, len(outPages))
+	log.Printf("Total Input %d page(s). Total Output %d pages(s).", pageRange.PageCount(), len(outPages))
 }
 
-func processEachPage(theBook *book.Book, pageNo int, end int) (*format.Page, int, error) {
+func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*format.Page, int, error) {
 	processed := 0
 	current, err := theBook.LoadPage(pageNo)
 	if err != nil {
@@ -200,7 +203,7 @@ func processEachPage(theBook *book.Book, pageNo int, end int) (*format.Page, int
 	processed += 1
 
 	// Look ahead next page
-	if pageNo+1 <= end && connConfig.Enabled { // has next page
+	if pr.Contains(pageNo+1) && connConfig.Enabled { // has next page
 		// Read next page
 		next, err := theBook.LoadPage(pageNo + 1)
 		if err != nil {
