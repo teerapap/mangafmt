@@ -24,7 +24,7 @@ var bookTitle string
 var bookConfig book.BookConfig
 var fuzzP float64
 var trimConfig book.TrimConfig
-var connConfig book.ConnectConfig
+var spreadConfig book.SpreadConfig
 var targetSize book.Size
 var grayscaleStr string
 var grayscalePR = book.NewPageRange()
@@ -51,11 +51,11 @@ func init() {
 	flag.BoolVar(&trimConfig.Enabled, "trim", true, "enable trim edge")
 	flag.Float64Var(&trimConfig.MinSizeP, "trim-min-size", 0.85, "minimum size after trimmed (percentage)[0.0-1.0]")
 	flag.IntVar(&trimConfig.Margin, "trim-margin", 10, "safety trim margin (pixel)")
-	flag.BoolVar(&connConfig.Enabled, "connect", true, "enable two-page connection")
-	flag.UintVar(&connConfig.EdgeWidth, "connect-edge", 2, "edge width for two-page connection check (pixel)")
-	flag.UintVar(&connConfig.EdgeMargin, "connect-margin", 2, "safety margin before edge width (pixel)")
-	flag.Float64Var(&connConfig.BgDistort, "connect-bg-distortion", 0.4, "a page is considered a single page if the distortion between its edge and background color are less within this threshold (percentage)[0.0-1.0]")
-	flag.Float64Var(&connConfig.LrDistort, "connect-lr-distortion", 0.4, "two pages are considered connected if the distortion between their edges are less within this threshold (percentage)[0.0-1.0]")
+	flag.BoolVar(&spreadConfig.Enabled, "spread", true, "enable double-page spread detection and connection")
+	flag.UintVar(&spreadConfig.EdgeWidth, "spread-edge", 2, "edge width for double-page spread detection (pixel)")
+	flag.UintVar(&spreadConfig.EdgeMargin, "spread-margin", 2, "safety margin before edge width (pixel)")
+	flag.Float64Var(&spreadConfig.BgDistort, "spread-bg-distortion", 0.4, "a page is considered a single page if the distortion between its edge and background color are less than this threshold (percentage)[0.0-1.0]")
+	flag.Float64Var(&spreadConfig.LrDistort, "spread-lr-distortion", 0.4, "two pages are considered double-page spread if the distortion between their edges are less than this threshold (percentage)[0.0-1.0]")
 	flag.UintVar(&targetSize.Width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "output screen heigt (pixel)")
 	flag.StringVar(&grayscaleStr, "grayscale", "2-", "page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion")
@@ -207,7 +207,7 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*forma
 	processed += 1
 
 	// Look ahead next page
-	if pr.Contains(pageNo+1) && connConfig.Enabled { // has next page
+	if pr.Contains(pageNo+1) && spreadConfig.Enabled { // has next page
 		// Read next page
 		next, err := theBook.LoadPage(pageNo + 1)
 		if err != nil {
@@ -217,9 +217,9 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*forma
 
 		// Check if the next page can merge with current page
 		left, right := current.LeftRight(next)
-		connected, err := left.CanConnect(right, connConfig)
+		connected, err := left.IsDoublePageSpread(right, spreadConfig)
 		if err != nil {
-			return nil, 0, fmt.Errorf("checking if two pages are connected: %w", err)
+			return nil, 0, fmt.Errorf("checking if two pages are double-page spread: %w", err)
 		}
 		if connected {
 			// connect two pages

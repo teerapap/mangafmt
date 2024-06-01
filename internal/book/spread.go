@@ -1,5 +1,5 @@
 //
-// connect.go
+// spread.go
 // Copyright (C) 2024 Teerapap Changwichukarn <teerapap.c@gmail.com>
 //
 // Distributed under terms of the MIT license.
@@ -14,7 +14,7 @@ import (
 	"gopkg.in/gographics/imagick.v2/imagick"
 )
 
-type ConnectConfig struct {
+type SpreadConfig struct {
 	Enabled    bool
 	EdgeWidth  uint
 	EdgeMargin uint
@@ -22,15 +22,15 @@ type ConnectConfig struct {
 	LrDistort  float64
 }
 
-func (left *Page) CanConnect(right *Page, cfg ConnectConfig) (bool, error) {
+func (left *Page) IsDoublePageSpread(right *Page, cfg SpreadConfig) (bool, error) {
 	lpEdge := left.Rect().RightEdge(cfg.EdgeWidth, cfg.EdgeMargin)
 	rpEdge := right.Rect().LeftEdge(cfg.EdgeWidth, cfg.EdgeMargin)
 
 	if lpEdge.size != rpEdge.size {
-		log.Printf("[Connect] Two pages (%d <-> %d) are not connected because both edges are not the same size - left(%s) != right(%s)", left.PageNo, right.PageNo, lpEdge.size, rpEdge.size)
+		log.Printf("[Spread] Two pages (%d and %d) are not connected because both edges are not the same size - left(%s) != right(%s)", left.PageNo, right.PageNo, lpEdge.size, rpEdge.size)
 		return false, nil
 	} else if lpEdge.size.Width == 0 {
-		log.Printf("[Connect] Two pages (%d <-> %d) are not connected because both pages are not wide enough - left(%s), right(%s)", left.PageNo, right.PageNo, lpEdge.size, rpEdge.size)
+		log.Printf("[Spread] Two pages (%d and %d) are not connected because both pages are not wide enough - left(%s), right(%s)", left.PageNo, right.PageNo, lpEdge.size, rpEdge.size)
 		return false, nil
 	}
 
@@ -61,7 +61,7 @@ func (left *Page) CanConnect(right *Page, cfg ConnectConfig) (bool, error) {
 	}
 	if distortion <= cfg.BgDistort {
 		// edge is all background
-		log.Printf("[Connect] Left page(%d) edge has background border - distortion(%f) is below threshold(%f)", left.PageNo, distortion, cfg.BgDistort)
+		log.Printf("[Spread] Left page(%d) edge has background border - distortion(%f) is below threshold(%f)", left.PageNo, distortion, cfg.BgDistort)
 		return false, nil
 	}
 
@@ -78,7 +78,7 @@ func (left *Page) CanConnect(right *Page, cfg ConnectConfig) (bool, error) {
 	}
 	if distortion <= cfg.BgDistort {
 		// edge is all background
-		log.Printf("[Connect] Right page(%d) edge has background border - distortion(%f) is below threshold(%f)", right.PageNo, distortion, cfg.BgDistort)
+		log.Printf("[Spread] Right page(%d) edge has background border - distortion(%f) is below threshold(%f)", right.PageNo, distortion, cfg.BgDistort)
 		return false, nil
 	}
 
@@ -88,11 +88,11 @@ func (left *Page) CanConnect(right *Page, cfg ConnectConfig) (bool, error) {
 		return false, fmt.Errorf("calculating image distortion(RMSE) between left(%d) and right(%d): %w", left.PageNo, right.PageNo, err)
 	}
 	if distortion > cfg.LrDistort {
-		// have connection
-		log.Printf("[Connect] Left page(%d) edge and right page edge(%d) do not connect - distortion(%f) is more than threshold(%f)", left.PageNo, right.PageNo, distortion, cfg.LrDistort)
+		log.Printf("[Spread] Left page(%d) edge and right page edge(%d) do not connect - distortion(%f) is more than threshold(%f)", left.PageNo, right.PageNo, distortion, cfg.LrDistort)
 		return false, nil
 	}
-	log.Printf("[Connect] Page %d and %d are connected! - distortion=%f", left.PageNo, right.PageNo, distortion)
+	// they are double-page spread
+	log.Printf("[Spread] Page %d and %d are double-page spread! - distortion(%f) is below threshold(%f)", left.PageNo, right.PageNo, distortion, cfg.LrDistort)
 
 	return true, nil
 }
@@ -124,7 +124,7 @@ func (left *Page) Connect(right *Page) (*Page, error) {
 func printDistortions(mw1 *imagick.MagickWand, name1 string, mw2 *imagick.MagickWand, name2 string, fuzzP float64) {
 	fuzz := FuzzFromPercent(fuzzP)
 	if err := mw1.SetImageFuzz(fuzz); err != nil {
-		log.Verbosef("[Connect] Setting %s page fuzz %f: %s", name1, fuzz, err)
+		log.Verbosef("[Spread] Setting %s page fuzz %f: %s", name1, fuzz, err)
 		return
 	}
 
@@ -148,14 +148,14 @@ func printDistortions(mw1 *imagick.MagickWand, name1 string, mw2 *imagick.Magick
 		imagick.METRIC_ROOT_MEAN_SQUARED_ERROR,
 	}
 
-	log.Verbosef("[Connect] Distortion between %s vs %s", name1, name2)
+	log.Verbosef("[Spread] Distortion between %s vs %s", name1, name2)
 	for _, m := range metrics {
 		mn := mnames[m]
 		distortion, err := mw1.GetImageDistortion(mw2, m)
 		if err != nil {
-			log.Verbosef("[Connect] %s: %s", mn, err)
+			log.Verbosef("[Spread] %s: %s", mn, err)
 		} else {
-			log.Verbosef("[Connect] %s: %f", mn, distortion)
+			log.Verbosef("[Spread] %s: %f", mn, distortion)
 		}
 	}
 }
