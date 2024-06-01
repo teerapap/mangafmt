@@ -83,12 +83,26 @@
 
 ## Install
 
-TBA
+There are two ways to install.
 
-### Supported Platform and Dependencies
+### Pre-built binary
 
-* Linux (Tested on Ubuntu only)
-* ImageMagick >= 6.9.1-7
+#### Ubuntu
+
+```
+sudo apt-get install libmagickwand-6.q16-6
+```
+
+Download the pre-built binary from [Releases Page](https://github.com/teerapap/mangafmt/releases)
+
+### Using `go install`
+
+#### Ubuntu
+
+```
+sudo apt-get install libmagickwand-dev
+go install github.com/teerapap/mangafmt@latest
+```
 
 ## Build
 
