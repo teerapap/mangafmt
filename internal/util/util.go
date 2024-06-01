@@ -15,14 +15,22 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/teerapap/mangafmt/internal/log"
 )
 
-// This variable is overridden with go build command for official release
-// go build -ldflags="-X github.com/teerapap/mangafmt/internal/util.AppVersion=`git describe`"
 var AppVersion = "devel"
+
+func init() {
+	info, ok := debug.ReadBuildInfo()
+	fmt.Println(info)
+	if !ok {
+		panic("Cannot read build info")
+	}
+	AppVersion = info.Main.Version
+}
 
 func Must(err error) func(doing string) {
 	return func(doing string) {
