@@ -17,8 +17,6 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
-
-	"github.com/teerapap/mangafmt/internal/log"
 )
 
 var AppVersion = "devel"
@@ -34,8 +32,7 @@ func init() {
 func Must(err error) func(doing string) {
 	return func(doing string) {
 		if err != nil {
-			log.Errorf("while %s - %s", doing, err)
-			panic(err)
+			panic(fmt.Errorf("while %s: %w", doing, err))
 		}
 	}
 }

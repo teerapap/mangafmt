@@ -84,6 +84,7 @@ func handleExit() {
 	if !verbose {
 		if r := recover(); r != nil {
 			// exit gracefully if not verbose
+			log.Errorf("%s", r)
 			os.Exit(1)
 		}
 	}
@@ -107,13 +108,13 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-	inputFile = util.Must1(util.IsReadableFile(inputFile))("input file path")
+	inputFile = util.Must1(util.IsReadableFile(inputFile))("checking input file path")
 	log.Verbosef("Input: %s", inputFile)
 	outputFile = strings.TrimSpace(outputFile)
 	if outputFile == "" {
 		outputFile = util.ReplaceExt(inputFile, outputFormat.Ext())
 	} else {
-		outputFile = util.Must1(util.IsWritableFile(outputFile))("output file path")
+		outputFile = util.Must1(util.IsWritableFile(outputFile))("checking output file path")
 	}
 	log.Verbosef("Output: %s", outputFile)
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
