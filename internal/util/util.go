@@ -25,7 +25,6 @@ var AppVersion = "devel"
 
 func init() {
 	info, ok := debug.ReadBuildInfo()
-	fmt.Println(info)
 	if !ok {
 		panic("Cannot read build info")
 	}
