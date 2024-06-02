@@ -19,8 +19,11 @@ func (p *Page) ConvertToGrayscale() error {
 	if err := p.mw.TransformImageColorspace(imagick.COLORSPACE_GRAY); err != nil {
 		return fmt.Errorf("converting to grayscale: %w", err)
 	}
-	if err := p.mw.SetImageDepth(8); err != nil {
-		return fmt.Errorf("setting output image depth to 8 bits: %w", err)
+	if err := p.mw.QuantizeImage(16, imagick.COLORSPACE_GRAY, 0, true, false); err != nil {
+		return fmt.Errorf("reducing number of colors to 16 colors: %w", err)
+	}
+	if err := p.mw.SetImageChannelDepth(imagick.CHANNELS_ALL, 4); err != nil {
+		return fmt.Errorf("setting output image channel depth to 4 bits: %w", err)
 	}
 	return nil
 }
