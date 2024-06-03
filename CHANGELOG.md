@@ -1,13 +1,19 @@
 # CHANGELOG.md
 
-## 0.2.0 (2024-06-03)
+## v0.2.1 (2024-06-03)
+
+Bug Fixes:
+
+* Fix malformed epub/kepub output due to html/template bug.
+
+## v0.2.0 (2024-06-03)
 
 Features:
 
 * Improve grayscale color depth reduction to reduce output file size substantially.
-* Add `--grayscale-depth` command-line argument
+* Add `--grayscale-depth` command-line argument.
 
-## 0.1.0 (2024-06-02)
+## v0.1.0 (2024-06-02)
 
 First public release
 
