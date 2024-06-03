@@ -11,12 +11,12 @@ import (
 	"archive/zip"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"text/template"
 )
 
 var AppVersion = "devel"
