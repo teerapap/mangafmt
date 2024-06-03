@@ -27,7 +27,7 @@ var trimConfig book.TrimConfig
 var spreadConfig book.SpreadConfig
 var targetSize book.Size
 var grayscaleStr string
-var grayscalePR = book.NewPageRange()
+var grayConfig book.GrayscaleConfig
 var outputFile string
 var outputFormat format.OutputFormat
 
@@ -59,6 +59,7 @@ func init() {
 	flag.UintVar(&targetSize.Width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "output screen heigt (pixel)")
 	flag.StringVar(&grayscaleStr, "grayscale", "2-", "page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion")
+	flag.UintVar(&grayConfig.ColorDepth, "grayscale-depth", 4, "grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits.")
 	flag.Var(&outputFormat, "format", "output file format. The supported formats\n\t- raw (default)\n\t- cbz\n\t- epub\n\t- kepub")
 	flag.StringVar(&outputFile, "output", "", "output file. Unspecified or blank means using the same file name as input file")
 }
@@ -119,6 +120,7 @@ func main() {
 	log.Verbosef("Output: %s", outputFile)
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
 	fuzzP = max(min(fuzzP, 1.0), 0.0)
+	util.Must(book.IsSupportedColorDepth(grayConfig.ColorDepth))("checking grayscale color depth")
 
 	// Load input book file
 	theBook := util.Must1(book.NewBook(inputFile, bookConfig))("loading book")
@@ -131,7 +133,8 @@ func main() {
 	// Parse page range arguments
 	util.Must(pageRange.Parse(pageRangeStr, theBook.PageCount))(fmt.Sprintf("parsing page range(%s)", pageRangeStr))
 	if strings.ToLower(grayscaleStr) != "false" {
-		util.Must(grayscalePR.Parse(grayscaleStr, theBook.PageCount))(fmt.Sprintf("parsing grayscale page range(%s)", grayscaleStr))
+		grayConfig.PageRange = book.NewPageRange()
+		util.Must(grayConfig.PageRange.Parse(grayscaleStr, theBook.PageCount))(fmt.Sprintf("parsing grayscale page range(%s)", grayscaleStr))
 	}
 
 	// Create work dir
@@ -243,10 +246,8 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*forma
 	}
 
 	// Convert to grayscale
-	if grayscalePR.Contains(current.PageNo) || (current.OtherPageNo > 0 && grayscalePR.Contains(current.OtherPageNo)) {
-		if err := current.ConvertToGrayscale(); err != nil {
-			return nil, 0, fmt.Errorf("converting page to grayscale: %w", err)
-		}
+	if err := current.ConvertToGrayscale(grayConfig); err != nil {
+		return nil, 0, fmt.Errorf("converting page to grayscale: %w", err)
 	}
 
 	// Write to filesystem

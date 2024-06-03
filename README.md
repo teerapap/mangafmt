@@ -39,6 +39,8 @@
         color fuzz (percentage)[0.0-1.0] (default 0.1)
   -grayscale string
         page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion (default "2-")
+  -grayscale-depth uint
+        grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. (default 4)
   -h    show help
   -height uint
         output screen heigt (pixel) (default 1680)
