@@ -14,20 +14,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 	"text/template"
 )
 
-var AppVersion = "devel"
-
-func init() {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		panic("Cannot read build info")
-	}
-	AppVersion = info.Main.Version
-}
+const AppVersion = "v0.2.1"
 
 func Must(err error) func(doing string) {
 	return func(doing string) {
