@@ -30,7 +30,7 @@ func toInt(str string, ret *int) error {
 		return fmt.Errorf("'%s' is not page number", str)
 	}
 	if n <= 0 {
-		return fmt.Errorf("%d is invalid. Page number must be positive number.", n)
+		return fmt.Errorf("%d is invalid. Page number must be positive number", n)
 	}
 	*ret = n
 	return nil

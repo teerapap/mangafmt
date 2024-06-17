@@ -35,7 +35,7 @@ func SaveAsRaw(pages []Page, outDir string) error {
 
 		err := os.Rename(page.Filepath, outFile)
 		if err != nil {
-			return fmt.Errorf("Moving page file from %s to %s: %w", page.Filepath, outFile, err)
+			return fmt.Errorf("moving page file from %s to %s: %w", page.Filepath, outFile, err)
 		}
 
 		log.Unindent()

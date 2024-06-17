@@ -71,7 +71,7 @@ func (f *OutputFormat) Set(val string) error {
 	case "kepub":
 		*f = KEPUB
 	default:
-		return fmt.Errorf("Unknown format: %s", val)
+		return fmt.Errorf("unknown format: %s", val)
 	}
 	return nil
 }

@@ -33,7 +33,7 @@ func IsSupportedColorDepth(depth uint) error {
 	case 16:
 		return nil
 	}
-	return fmt.Errorf("Unsupported color depth: %d-bits", depth)
+	return fmt.Errorf("unsupported color depth: %d-bits", depth)
 }
 
 func (p *Page) ConvertToGrayscale(cfg GrayscaleConfig) error {

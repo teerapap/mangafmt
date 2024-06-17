@@ -120,7 +120,7 @@ func (left *Page) Connect(right *Page) (*Page, error) {
 	return newPage, nil
 }
 
-// for debugging
+//lint:ignore U1000 for debugging
 func printDistortions(mw1 *imagick.MagickWand, name1 string, mw2 *imagick.MagickWand, name2 string, fuzzP float64) {
 	fuzz := FuzzFromPercent(fuzzP)
 	if err := mw1.SetImageFuzz(fuzz); err != nil {
