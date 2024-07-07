@@ -8,10 +8,10 @@
 package book
 
 import (
-	"fmt"
+	"image"
 
+	"github.com/teerapap/mangafmt/internal/imgutil"
 	"github.com/teerapap/mangafmt/internal/log"
-	"gopkg.in/gographics/imagick.v2/imagick"
 )
 
 func (p *Page) ResizeToFit(screen Size) error {
@@ -21,11 +21,8 @@ func (p *Page) ResizeToFit(screen Size) error {
 	if pgOrient != Square && pgOrient != scrOrient {
 		// rotate counter-clockwise
 		log.Printf("[Resize] Rotating page because page orientation %s (%s) does not match screen orientation (%s)", pageSize, pgOrient, scrOrient)
-		pw := imagick.NewPixelWand()
-		defer pw.Destroy()
-		if err := p.mw.RotateImage(pw, 270); err != nil {
-			return fmt.Errorf("re-orient page: %w", err)
-		}
+		p.img = imgutil.Rotate(p.img, 270)
+
 		pageSize = p.Size()
 		//lint:ignore SA4006,SA4017 for correctness
 		pgOrient = pageSize.Orientation()
@@ -38,9 +35,7 @@ func (p *Page) ResizeToFit(screen Size) error {
 	fittedSize := pageSize.AspectFitIn(screen, false)
 
 	log.Printf("[Resize] Resizing page size %s to size %s fit in screen size %s", pageSize, fittedSize, screen)
-	if err := p.mw.ResizeImage(fittedSize.Width, fittedSize.Height, imagick.FILTER_LANCZOS, 1); err != nil {
-		return fmt.Errorf("resizing page: %w", err)
-	}
+	p.img = imgutil.Resize(p.img, image.Pt(int(fittedSize.Width), int(fittedSize.Height)))
 
 	return nil
 }

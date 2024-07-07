@@ -1,5 +1,5 @@
 //
-// ops.go
+// page.go
 // Copyright (C) 2024 Teerapap Changwichukarn <teerapap.c@gmail.com>
 //
 // Distributed under terms of the MIT license.
@@ -9,21 +9,23 @@ package book
 
 import (
 	"fmt"
+	"image"
+	"image/png"
+	"os"
 
 	"github.com/teerapap/mangafmt/internal/log"
-	"gopkg.in/gographics/imagick.v2/imagick"
 )
 
 type Page struct {
-	mw   *imagick.MagickWand
+	img  image.Image
 	book *Book
 
 	PageNo      int
 	OtherPageNo int // the other page number that this page connected with
 }
 
-func (p Page) Destroy() {
-	p.mw.Destroy()
+func (p *Page) Destroy() {
+	p.img = image.White
 }
 
 func (p Page) Rect() Rect {
@@ -31,12 +33,7 @@ func (p Page) Rect() Rect {
 }
 
 func (p Page) Size() Size {
-	return Size{p.mw.GetImageWidth(), p.mw.GetImageHeight()}
-}
-
-func FuzzFromPercent(fp float64) float64 {
-	_, colorRange := imagick.GetQuantumRange()
-	return fp * float64(colorRange)
+	return SizeFromBounds(p.img.Bounds())
 }
 
 func digitCount(total int) int {
@@ -82,8 +79,15 @@ func (p Page) WriteFile(dir string) (string, string, error) {
 	// Save as raw image
 	log.Printf("[Save] Writing to filesystem")
 	filename := p.Filepath(dir, ".png")
-	if err := p.mw.WriteImage(filename); err != nil {
+	f, err := os.Create(filename)
+	if err != nil {
+		return "", "", fmt.Errorf("create image file %s: %w", filename, err)
+	}
+	defer f.Close()
+
+	if err := png.Encode(f, p.img); err != nil {
 		return "", "", fmt.Errorf("writing page to image file %s: %w", filename, err)
 	}
+
 	return filename, "image/png", nil
 }

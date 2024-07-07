@@ -9,6 +9,7 @@ package book
 
 import (
 	"fmt"
+	"image"
 
 	"github.com/teerapap/mangafmt/internal/util"
 )
@@ -35,6 +36,10 @@ func (o Orientation) String() string {
 type Size struct {
 	Width  uint
 	Height uint
+}
+
+func SizeFromBounds(b image.Rectangle) Size {
+	return Size{uint(b.Dx()), uint(b.Dy())}
 }
 
 func (s Size) String() string {
@@ -79,6 +84,7 @@ func (s Size) Orientation() Orientation {
 	}
 }
 
+// TODO: Use image.Point
 type Point struct {
 	X int
 	Y int
@@ -92,6 +98,7 @@ func (p Point) TranslateBy(dx int, dy int) Point {
 	return Point{p.X + dx, p.Y + dy}
 }
 
+// TODO: Use image.Rectange
 type Rect struct {
 	origin Point
 	size   Size
@@ -99,6 +106,24 @@ type Rect struct {
 
 func (r Rect) String() string {
 	return fmt.Sprintf("%s+%d+%d", r.size, r.origin.X, r.origin.Y)
+}
+
+func FromRectangle(r image.Rectangle) Rect {
+	r = r.Canon()
+	return Rect{
+		origin: Point{
+			X: r.Min.X,
+			Y: r.Min.Y,
+		},
+		size: Size{
+			Width:  uint(r.Dx()),
+			Height: uint(r.Dy()),
+		},
+	}
+}
+
+func (r Rect) ToRectangle() image.Rectangle {
+	return image.Rect(r.MinX(), r.MinY(), r.MaxX(), r.MaxY())
 }
 
 func (r Rect) MinX() int {

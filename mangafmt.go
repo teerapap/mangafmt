@@ -8,9 +8,9 @@ import (
 
 	"github.com/teerapap/mangafmt/internal/book"
 	"github.com/teerapap/mangafmt/internal/book/format"
+	"github.com/teerapap/mangafmt/internal/imgutil"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
-	"gopkg.in/gographics/imagick.v2/imagick"
 )
 
 // Command-line Parsing
@@ -21,6 +21,7 @@ var workDir string
 var pageRangeStr string
 var pageRange = book.NewPageRange()
 var bookTitle string
+var bgColorStr string
 var bookConfig book.BookConfig
 var fuzzP float64
 var trimConfig book.TrimConfig
@@ -44,7 +45,7 @@ func init() {
 	flag.StringVar(&pageRangeStr, "pages", "1-", "page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end.")
 	flag.StringVar(&bookTitle, "title", "", "Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
 	flag.Float64Var(&bookConfig.Density, "density", 300.0, "output density (DPI)")
-	flag.StringVar(&bookConfig.BgColor, "background", "white", "background color")
+	flag.StringVar(&bgColorStr, "background", "#FFFFFF", "background color")
 	flag.BoolVar(&bookConfig.IsRTL, "rtl", false, "right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&bookConfig.IsRTL, "right-to-left", false, "right-to-left read direction (ex. Japanese manga)")
 	flag.Float64Var(&fuzzP, "fuzz", 0.1, "color fuzz (percentage)[0.0-1.0]")
@@ -59,7 +60,7 @@ func init() {
 	flag.UintVar(&targetSize.Width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "output screen heigt (pixel)")
 	flag.StringVar(&grayscaleStr, "grayscale", "2-", "page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion")
-	flag.UintVar(&grayConfig.ColorDepth, "grayscale-depth", 4, "grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits.")
+	flag.UintVar(&grayConfig.ColorDepth, "grayscale-depth", 4, "grayscale color depth in number of bits. Possible values are 1, 2, 4, 8 bits.")
 	flag.Var(&outputFormat, "format", "output file format. The supported formats\n\t- raw (default)\n\t- cbz\n\t- epub\n\t- kepub")
 	flag.StringVar(&outputFile, "output", "", "output file. Unspecified or blank means using the same file name as input file")
 }
@@ -118,6 +119,7 @@ func main() {
 		outputFile = util.Must1(util.IsWritableFile(outputFile))("checking output file path")
 	}
 	log.Verbosef("Output: %s", outputFile)
+	bookConfig.BgColor = util.Must1(imgutil.ParseColorHex(bgColorStr))("checking background color")
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
 	fuzzP = max(min(fuzzP, 1.0), 0.0)
 	util.Must(book.IsSupportedColorDepth(grayConfig.ColorDepth))("checking grayscale color depth")
@@ -141,16 +143,6 @@ func main() {
 	util.Must1(util.CreateWorkDir(&workDir, true))("creating work directory")
 	defer os.RemoveAll(workDir)
 	log.Verbosef("Work directory: %s", workDir)
-
-	// Initialize Imagemagick
-	log.Verbose("Initializing Imagemagick")
-	imagick.Initialize()
-	defer func() {
-		log.Verbose("Terminating Imagemagick")
-		imagick.Terminate()
-		log.Verbose("Terminated Imagemagick")
-	}()
-	log.Verbose("Initialized Imagemagick")
 
 	// For loop each page
 	partials := pageRange.PageCount() != theBook.PageCount
@@ -236,7 +228,7 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*forma
 	}
 
 	// Trim image with fuzz
-	if err := current.Trim(trimConfig, fuzzP, workDir); err != nil {
+	if err := current.Trim(trimConfig, fuzzP); err != nil {
 		return nil, 0, fmt.Errorf("trimming page: %w", err)
 	}
 

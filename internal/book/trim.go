@@ -9,10 +9,9 @@ package book
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/teerapap/mangafmt/internal/imgutil"
 	"github.com/teerapap/mangafmt/internal/log"
-	"gopkg.in/gographics/imagick.v2/imagick"
 )
 
 type TrimConfig struct {
@@ -21,7 +20,7 @@ type TrimConfig struct {
 	Margin   int
 }
 
-func (p *Page) Trim(cfg TrimConfig, fuzzP float64, workDir string) error {
+func (p *Page) Trim(cfg TrimConfig, fuzzP float64) error {
 	if !cfg.Enabled {
 		return nil
 	}
@@ -30,34 +29,12 @@ func (p *Page) Trim(cfg TrimConfig, fuzzP float64, workDir string) error {
 	minSize := pageRect.size.ScaleBy(cfg.MinSizeP)
 	bgColor := p.book.Config.BgColor
 
-	// write tmp file
-	tmpFile := p.Filepath(workDir, ".trimming.png")
-	if err := p.mw.WriteImage(tmpFile); err != nil {
-		return fmt.Errorf("writing tmp file for trimming: %w", err)
-	}
-	defer os.Remove(tmpFile)
-
-	// finding trim box
-	ret, err := imagick.ConvertImageCommand([]string{
-		"convert",
-		tmpFile,
-		"-bordercolor", bgColor, // guiding border so that it trims only specified background color
-		"-border", "1",
-		"-fuzz", fmt.Sprintf("%.0f%%", fuzzP),
-		"-format", "%@",
-		"null:",
-	})
+	tr, err := imgutil.TrimRect(p.img, bgColor, fuzzP)
 	if err != nil {
 		return fmt.Errorf("finding trim box: %w", err)
 	}
-	ret.Info.Destroy()
 
-	var trimRect Rect
-	if _, err := fmt.Sscanf(ret.Meta, "%dx%d+%d+%d", &(trimRect.size.Width), &(trimRect.size.Height), &(trimRect.origin.X), &(trimRect.origin.Y)); err != nil {
-		return fmt.Errorf("parsing trim box %s: %w", ret.Meta, err)
-	}
-	trimRect = trimRect.
-		TranslateBy(-1, -1).               // remove trim guiding border
+	trimRect := FromRectangle(tr).
 		InsetBy(-cfg.Margin, -cfg.Margin). // add safety margin
 		BoundBy(pageRect)                  // bound by page rect
 
@@ -81,10 +58,8 @@ func (p *Page) Trim(cfg TrimConfig, fuzzP float64, workDir string) error {
 		log.Printf("[Trim] Page size %s is trimmed by %s but it is smaller than minimum size %s - expanding trim box to minimum %s", pageRect.size, oldRect, minSize, trimRect)
 	}
 
-	// Crop based on trim size
-	if err := p.mw.CropImage(trimRect.size.Width, trimRect.size.Height, trimRect.origin.X, trimRect.origin.Y); err != nil {
-		return fmt.Errorf("trimming page with %s: %w", trimRect, err)
-	}
+	// Crop to trim rectangle
+	p.img = imgutil.CropImage(p.img, trimRect.ToRectangle())
 
 	// Print trim info
 	tWidthP := float64(trimRect.size.Width) * 100.0 / float64(pageRect.size.Width)
