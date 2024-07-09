@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/hashicorp/go-uuid"
 	"github.com/teerapap/mangafmt/internal/book"
 	"github.com/teerapap/mangafmt/internal/imgutil"
 	"github.com/teerapap/mangafmt/internal/log"
@@ -38,10 +38,13 @@ func save(format string, theBook *book.Book, pages []Page, outFile string) error
 	log.Indent()
 
 	// create epub structure
-	epub := createEpub(theBook, pages)
+	epub, err := createEpub(theBook, pages)
+	if err != nil {
+		return fmt.Errorf("creating epub: %w", err)
+	}
 
 	// write epub stucture to file
-	err := writeEpub(epub, outFile)
+	err = writeEpub(epub, outFile)
 	if err != nil {
 		return fmt.Errorf("creating epub file: %w", err)
 	}
@@ -78,10 +81,15 @@ type EpubPageItem struct {
 	MediaType string
 }
 
-func createEpub(theBook *book.Book, pages []Page) EpubBook {
+func createEpub(theBook *book.Book, pages []Page) (EpubBook, error) {
 	epub := EpubBook{}
 
-	epub.BookID = fmt.Sprintf("urn:uuid:%s", uuid.New())
+	uuidstr, err := uuid.GenerateUUID()
+	if err != nil {
+		return EpubBook{}, fmt.Errorf("generating epub uuid: %w", err)
+	}
+
+	epub.BookID = fmt.Sprintf("urn:uuid:%s", uuidstr)
 	epub.Language = "en-US"
 	epub.Title = html.EscapeString(theBook.Title)
 	epub.TotalPageCount = len(pages)
@@ -120,7 +128,7 @@ func createEpub(theBook *book.Book, pages []Page) EpubBook {
 
 		epub.Pages = append(epub.Pages, epubPage)
 	}
-	return epub
+	return epub, nil
 }
 
 //go:embed templates/epub/mimetype
