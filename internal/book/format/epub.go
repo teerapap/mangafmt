@@ -191,6 +191,10 @@ func writeEpub(epub EpubBook, outFile string) error {
 	if err != nil {
 		return fmt.Errorf("writing metadata to the output file: %w", err)
 	}
+	err = util.WriteFileToZip(w, "OEBPS/Text/style.css", styleTmpl, epub)
+	if err != nil {
+		return fmt.Errorf("writing metadata to the output file: %w", err)
+	}
 
 	for i, page := range epub.Pages {
 		log.Printf("Packaging page....(%d/%d)", i+1, epub.TotalPageCount)
