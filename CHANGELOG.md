@@ -1,5 +1,30 @@
 # CHANGELOG.md
 
+## v0.3.0 (2024-07-14)
+
+Features:
+
+* Support Windows and OSX in addition to Linux.
+* Reduce memory consumption by ~75%
+* Faster processing time up to ~70% improvments (using `libvips`)
+
+Bug Fixes:
+
+* Fix missing `style.css` in EPUB output format.
+
+Functional Changes:
+
+* Require `ImageMagick6` or `ImageMagick7` or `libvips` commands during runtime for PDF input.
+* Do not require `libmagickwand` as build or runtime dependencies.
+* `--background` now support only hex format.
+
+Improvements:
+
+* Pure Go code without cgo-linked dependencies
+* Improve edge trimming.
+* Use static app version and do not rely on `debug.BuildInfo`.
+* Replace `google/uuid` with `hashicorp/go-uuid`.
+
 ## v0.2.1 (2024-06-03)
 
 Bug Fixes:
