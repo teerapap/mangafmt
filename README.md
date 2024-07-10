@@ -9,7 +9,8 @@
 * Resize/rotate page to fit specific screen size.
 * Reduce file size by reducing colors to grayscale (except the cover page or configured otherwise).
 * Handle right-to-left (RTL) read direction.
-* Convert to EPUB/KEPUB/CBZ format. 
+* Convert to EPUB/KEPUB/CBZ format.
+* Support Windows/OSX/Linux
 
 ### Supported Formats
 
@@ -26,7 +27,7 @@
 ```
 ./mangafmt [options] <input_pdf_file>
   -background string
-        background color (default "white")
+        background color (default "#FFFFFF")
   -density float
         output density (DPI) (default 300)
   -format value
@@ -40,7 +41,7 @@
   -grayscale string
         page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion (default "2-")
   -grayscale-depth uint
-        grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. (default 4)
+        grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. No upscale if source image is in lower depth. (default 4)
   -h    show help
   -height uint
         output screen heigt (pixel) (default 1680)
@@ -89,31 +90,37 @@ There are two ways to install.
 
 ### Pre-built binary
 
-#### Ubuntu
-
-```
-sudo apt-get install libmagickwand-6.q16-6
-```
-
 Download the pre-built binary from [Releases Page](https://github.com/teerapap/mangafmt/releases)
 
 ### Using `go install`
 
-#### Ubuntu
-
 ```
-sudo apt-get install libmagickwand-dev
 go install github.com/teerapap/mangafmt@latest
 ```
 
+## Runtime Dependencies
+
+For PDF input, you need to install one of these options.
+
+* [libvips](https://www.libvips.org/) (**Fastest**)
+  * For Windows, you need to install the version with `-all` suffix and configure `PATH` environment variable to see `vips.exe` command.
+* [ImageMagick7](https://imagemagick.org/) and [Ghostscript](https://www.ghostscript.com/)
+* [ImageMagick6](https://legacy.imagemagick.org/) and [Ghostscript](https://www.ghostscript.com/)
+  * Not recommended for Windows because its `convert.exe` may clash with the system `convert.exe`
+
 ## Build
 
-### Ubuntu
+The code is pure Go so simply run
 
 ```
-sudo apt-get install libmagickwand-dev
 go build
 ```
+
+## Future Works
+
+* Support raw images in a directory input
+* Support CBZ input format
+* Support EPUB/KEPUB input format
 
 ## Notes
 
