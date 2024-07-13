@@ -60,7 +60,7 @@ func init() {
 	flag.UintVar(&targetSize.Width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "output screen heigt (pixel)")
 	flag.StringVar(&grayscaleStr, "grayscale", "2-", "page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion")
-	flag.UintVar(&grayConfig.ColorDepth, "grayscale-depth", 4, "grayscale color depth in number of bits. Possible values are 1, 2, 4, 8 bits.")
+	flag.UintVar(&grayConfig.ColorDepth, "grayscale-depth", 4, "grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. No upscale if source image is in lower depth.")
 	flag.Var(&outputFormat, "format", "output file format. The supported formats\n\t- raw (default)\n\t- cbz\n\t- epub\n\t- kepub")
 	flag.StringVar(&outputFile, "output", "", "output file. Unspecified or blank means using the same file name as input file")
 }

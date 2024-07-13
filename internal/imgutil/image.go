@@ -55,8 +55,37 @@ func NewCanvasSameColor(src image.Image, r image.Rectangle) draw.Image {
 	}
 }
 
-func TransformToGrayColorModel(img image.Image) *image.Gray {
-	dst := image.NewGray(img.Bounds())
+func ColorDepth(src image.Image) uint {
+	switch src.(type) {
+	case *image.Alpha16:
+		return 16
+	case *image.Gray16:
+		return 16
+	case *image.NRGBA64:
+		return 16
+	case *image.RGBA64:
+		return 16
+	case image.Rectangle:
+		return 16
+	case *image.Uniform:
+		return 16
+	default:
+		return 8
+	}
+}
+
+func TransformToGrayColorModel(img image.Image) image.Image {
+	switch img.(type) {
+	case *image.Gray16, *image.Gray:
+		return img
+	}
+	srcDepth := ColorDepth(img)
+	var dst draw.Image
+	if srcDepth == 16 {
+		dst = image.NewGray16(img.Bounds())
+	} else {
+		dst = image.NewGray(img.Bounds())
+	}
 	draw.Draw(dst, dst.Bounds(), img, img.Bounds().Min, draw.Src)
 	return dst
 }
