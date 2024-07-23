@@ -18,7 +18,7 @@ import (
 	"text/template"
 )
 
-const AppVersion = "v0.3.0"
+const AppVersion = "v0.4.0"
 
 func Must(err error) func(doing string) {
 	return func(doing string) {

@@ -1,5 +1,20 @@
 # CHANGELOG.md
 
+## v0.4.0 (2024-07-24)
+
+Features:
+
+* Support multiple background colors for `--background`.
+  * Some manga may have both white and black background so using single background color may lead to incorrect double-page spread detection for some pages.
+
+Bug Fixes:
+
+* Fix wrong background hex color in EPUB output format.
+
+Improvements:
+
+* Print version and full command arguments when `--verbose` is enabled for debugging.
+
 ## v0.3.0 (2024-07-14)
 
 Features:
