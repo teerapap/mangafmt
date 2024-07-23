@@ -100,6 +100,9 @@ func main() {
 	inputFile := flag.Arg(0)
 	log.SetVerbose(verbose)
 
+	log.Verbosef("mangafmt-%s", util.AppVersion)
+	log.Verbosef("%s", os.Args)
+
 	if help {
 		flag.Usage()
 		os.Exit(0)
