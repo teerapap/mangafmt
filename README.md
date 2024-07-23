@@ -27,61 +27,62 @@
 ```
 ./mangafmt [options] <input_pdf_file>
   -background string
-        background color (default "#FFFFFF")
+        Background color(s) separated by comma. The first color is the main background color. (default "#FFFFFF,#000000")
   -density float
-        output density (DPI) (default 300)
+        Output density (DPI) (default 300)
   -format value
-        output file format. The supported formats
+        Output file format. The supported formats
                 - raw (default)
                 - cbz
                 - epub
                 - kepub
   -fuzz float
-        color fuzz (percentage)[0.0-1.0] (default 0.1)
+        Color fuzz (percentage)[0.0-1.0] (default 0.1)
   -grayscale string
-        page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion (default "2-")
+        Page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion (default "2-")
   -grayscale-depth uint
-        grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. No upscale if source image is in lower depth. (default 4)
-  -h    show help
+        Grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. No upscale if source image is in lower depth. (default 4)
+  -h    Show help
   -height uint
-        output screen heigt (pixel) (default 1680)
+        Output screen heigt (pixel) (default 1680)
   -help
-        show help
+        Show help
   -output string
-        output file. Unspecified or blank means using the same file name as input file
+        Output file. Unspecified or blank means using the same file name as input file
   -pages string
-        page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end. (default "1-")
+        Page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end. (default "1-")
   -right-to-left
-        right-to-left read direction (ex. Japanese manga)
+        Right-to-left read direction (ex. Japanese manga)
   -rtl
-        right-to-left read direction (ex. Japanese manga)
+        Right-to-left read direction (ex. Japanese manga)
   -spread
-        enable double-page spread detection and connection (default true)
-  -spread-bg-distortion float
-        a page is considered a single page if the distortion between its edge and background color are less than this threshold (percentage)[0.0-1.0] (default 0.4)
+        Enable double-page spread detection and connection (default true)
+  -spread-bg-distortion --background
+        A page is considered a single page if the distortion between its edge and background color are less than this threshold (percentage)[0.0-1.0].
+        Multiple values are separated by comma. It should match with --background otherwise the last value is used for the rest of the list. (default "0.4,0.2")
   -spread-edge uint
-        edge width for double-page spread detection (pixel) (default 2)
+        Edge width for double-page spread detection (pixel) (default 2)
   -spread-lr-distortion float
-        two pages are considered double-page spread if the distortion between their edges are less than this threshold (percentage)[0.0-1.0] (default 0.4)
+        Two pages are considered double-page spread if the distortion between their edges are less than this threshold (percentage)[0.0-1.0] (default 0.4)
   -spread-margin uint
-        safety margin before edge width (pixel) (default 2)
+        Safety margin before edge width (pixel) (default 2)
   -title string
         Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension
   -trim
-        enable trim edge (default true)
+        Enable trim edge (default true)
   -trim-margin int
-        safety trim margin (pixel) (default 10)
+        Safety trim margin (pixel) (default 10)
   -trim-min-size float
-        minimum size after trimmed (percentage)[0.0-1.0] (default 0.85)
-  -v    verbose output
+        Minimum size after trimmed (percentage)[0.0-1.0] (default 0.85)
+  -v    Verbose output
   -verbose
-        verbose output
+        Verbose output
   -version
-        show version
+        Show version
   -width uint
-        output screen width (pixel) (default 1264)
+        Output screen width (pixel) (default 1264)
   -work-dir string
-        work directory path. Unspecified or blank means using system temp path
+        Work directory path. Unspecified or blank means using system temp path
 ```
 
 ## Install
