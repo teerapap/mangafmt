@@ -27,8 +27,8 @@ func ParseColorHex(str string) (color.Color, error) {
 }
 
 func ToHexString(c color.Color) string {
-	r, g, b, _ := c.RGBA()
-	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
+	rgb := color.RGBAModel.Convert(c).(color.RGBA)
+	return fmt.Sprintf("#%02x%02x%02x", rgb.R, rgb.G, rgb.B)
 }
 
 func FuzzFromPercent(fp float64) float64 {

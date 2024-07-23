@@ -111,7 +111,7 @@ func createEpub(theBook *book.Book, pages []Page) (EpubBook, error) {
 
 		epubPage := EpubPage{}
 		epubPage.Title = page.Id
-		epubPage.BgColor = imgutil.ToHexString(theBook.Config.BgColor)
+		epubPage.BgColor = imgutil.ToHexString(theBook.Config.BgColor[0])
 		epubPage.Width = page.Size.Width
 		epubPage.Height = page.Size.Height
 		epubPage.SrcFile = page.Filepath

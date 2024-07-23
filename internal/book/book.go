@@ -34,7 +34,7 @@ type Book struct {
 type BookConfig struct {
 	Density float64
 	IsRTL   bool
-	BgColor color.Color
+	BgColor []color.Color
 }
 
 func NewBook(path string, config BookConfig) (*Book, error) {

@@ -18,7 +18,7 @@ type SpreadConfig struct {
 	Enabled    bool
 	EdgeWidth  uint
 	EdgeMargin uint
-	BgDistort  float64
+	BgDistort  []float64
 	LrDistort  float64
 }
 
@@ -35,27 +35,30 @@ func (left *Page) IsDoublePageSpread(right *Page, cfg SpreadConfig) (bool, error
 	}
 
 	// Prepare background canvas for comparison
-	bgColor := left.book.Config.BgColor
-	bgCanvas := image.NewUniform(bgColor)
+	for i, bgColor := range left.book.Config.BgColor {
+		bgDistort := cfg.BgDistort[min(i, len(cfg.BgDistort)-1)]
+		bgCanvas := image.NewUniform(bgColor)
+		// Compare left vs background canvas
+		distortion := imgutil.GetRMSEDistortion(left.img, lpEdge.ToRectangle(), bgCanvas, image.Point{})
+		if distortion <= bgDistort {
+			// edge is all background
+			log.Printf("[Spread] Left page(%d) edge has background border (%s) - distortion(%f) is below threshold(%f)", left.PageNo, imgutil.ToHexString(bgColor), distortion, bgDistort)
+			return false, nil
+		}
+		log.Verbosef("[Spread] Left page(%d) edge does not have background border (%s) - distortion(%f) is higher than threshold(%f)", left.PageNo, imgutil.ToHexString(bgColor), distortion, bgDistort)
 
-	// Compare left vs background canvas
-	distortion := imgutil.GetRMSEDistortion(left.img, lpEdge.ToRectangle(), bgCanvas, image.Point{})
-	if distortion <= cfg.BgDistort {
-		// edge is all background
-		log.Printf("[Spread] Left page(%d) edge has background border - distortion(%f) is below threshold(%f)", left.PageNo, distortion, cfg.BgDistort)
-		return false, nil
-	}
-
-	// Compare right vs background canvas
-	distortion = imgutil.GetRMSEDistortion(right.img, rpEdge.ToRectangle(), bgCanvas, image.Point{})
-	if distortion <= cfg.BgDistort {
-		// edge is all background
-		log.Printf("[Spread] Right page(%d) edge has background border - distortion(%f) is below threshold(%f)", right.PageNo, distortion, cfg.BgDistort)
-		return false, nil
+		// Compare right vs background canvas
+		distortion = imgutil.GetRMSEDistortion(right.img, rpEdge.ToRectangle(), bgCanvas, image.Point{})
+		if distortion <= bgDistort {
+			// edge is all background
+			log.Printf("[Spread] Right page(%d) edge has background border (%s) - distortion(%f) is below threshold(%f)", right.PageNo, imgutil.ToHexString(bgColor), distortion, bgDistort)
+			return false, nil
+		}
+		log.Verbosef("[Spread] Right page(%d) edge does not have background border (%s) - distortion(%f) is higher than threshold(%f)", right.PageNo, imgutil.ToHexString(bgColor), distortion, bgDistort)
 	}
 
 	// Compare left page edge vs right page edge
-	distortion = imgutil.GetRMSEDistortion(left.img, lpEdge.ToRectangle(), right.img, rpEdge.ToRectangle().Min)
+	distortion := imgutil.GetRMSEDistortion(left.img, lpEdge.ToRectangle(), right.img, rpEdge.ToRectangle().Min)
 	if distortion > cfg.LrDistort {
 		log.Printf("[Spread] Left page(%d) edge and right page edge(%d) do not connect - distortion(%f) is more than threshold(%f)", left.PageNo, right.PageNo, distortion, cfg.LrDistort)
 		return false, nil

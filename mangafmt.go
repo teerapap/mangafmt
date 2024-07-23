@@ -3,7 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image/color"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/teerapap/mangafmt/internal/book"
@@ -25,6 +27,7 @@ var bgColorStr string
 var bookConfig book.BookConfig
 var fuzzP float64
 var trimConfig book.TrimConfig
+var bgDistortStr string
 var spreadConfig book.SpreadConfig
 var targetSize book.Size
 var grayscaleStr string
@@ -45,7 +48,7 @@ func init() {
 	flag.StringVar(&pageRangeStr, "pages", "1-", "page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end.")
 	flag.StringVar(&bookTitle, "title", "", "Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
 	flag.Float64Var(&bookConfig.Density, "density", 300.0, "output density (DPI)")
-	flag.StringVar(&bgColorStr, "background", "#FFFFFF", "background color")
+	flag.StringVar(&bgColorStr, "background", "#FFFFFF,#000000", "background color(s) separated by comma. The first color is the main background color.")
 	flag.BoolVar(&bookConfig.IsRTL, "rtl", false, "right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&bookConfig.IsRTL, "right-to-left", false, "right-to-left read direction (ex. Japanese manga)")
 	flag.Float64Var(&fuzzP, "fuzz", 0.1, "color fuzz (percentage)[0.0-1.0]")
@@ -55,7 +58,7 @@ func init() {
 	flag.BoolVar(&spreadConfig.Enabled, "spread", true, "enable double-page spread detection and connection")
 	flag.UintVar(&spreadConfig.EdgeWidth, "spread-edge", 2, "edge width for double-page spread detection (pixel)")
 	flag.UintVar(&spreadConfig.EdgeMargin, "spread-margin", 2, "safety margin before edge width (pixel)")
-	flag.Float64Var(&spreadConfig.BgDistort, "spread-bg-distortion", 0.4, "a page is considered a single page if the distortion between its edge and background color are less than this threshold (percentage)[0.0-1.0]")
+	flag.StringVar(&bgDistortStr, "spread-bg-distortion", "0.4,0.2", "a page is considered a single page if the distortion between its edge and background color are less than this threshold (percentage)[0.0-1.0].\n\tMultiple values are separated by comma. It should match with `--background` otherwise the last value is used for the rest of the list.")
 	flag.Float64Var(&spreadConfig.LrDistort, "spread-lr-distortion", 0.4, "two pages are considered double-page spread if the distortion between their edges are less than this threshold (percentage)[0.0-1.0]")
 	flag.UintVar(&targetSize.Width, "width", 1264, "output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "output screen heigt (pixel)")
@@ -92,6 +95,35 @@ func handleExit() {
 	}
 }
 
+func parseColorHexList(str string) ([]color.Color, error) {
+	parts := strings.Split(str, ",")
+	res := make([]color.Color, 0, len(parts))
+	for _, part := range parts {
+		c, err := imgutil.ParseColorHex(strings.TrimSpace(part))
+		if err != nil {
+			return res, err
+		}
+		res = append(res, c)
+	}
+	if len(res) == 0 {
+		return res, fmt.Errorf("require at least one color")
+	}
+	return res, nil
+}
+
+func parseFloatList(str string) ([]float64, error) {
+	parts := strings.Split(str, ",")
+	res := make([]float64, 0, len(parts))
+	for _, part := range parts {
+		f, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+		if err != nil {
+			return res, err
+		}
+		res = append(res, f)
+	}
+	return res, nil
+}
+
 func main() {
 	defer handleExit()
 
@@ -122,8 +154,10 @@ func main() {
 		outputFile = util.Must1(util.IsWritableFile(outputFile))("checking output file path")
 	}
 	log.Verbosef("Output: %s", outputFile)
-	bookConfig.BgColor = util.Must1(imgutil.ParseColorHex(bgColorStr))("checking background color")
+
+	bookConfig.BgColor = util.Must1(parseColorHexList(bgColorStr))("checking background color")
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
+	spreadConfig.BgDistort = util.Must1(parseFloatList(bgDistortStr))("checking spread background distortion threshold")
 	fuzzP = max(min(fuzzP, 1.0), 0.0)
 	util.Must(book.IsSupportedColorDepth(grayConfig.ColorDepth))("checking grayscale color depth")
 
