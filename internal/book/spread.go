@@ -15,11 +15,13 @@ import (
 )
 
 type SpreadConfig struct {
-	Enabled    bool
-	EdgeWidth  uint
-	EdgeMargin uint
-	BgDistort  []float64
-	LrDistort  float64
+	Enabled         bool
+	KeepOrientation bool
+	KeepOriginal    bool
+	EdgeWidth       uint
+	EdgeMargin      uint
+	BgDistort       []float64
+	LrDistort       float64
 }
 
 func (left *Page) IsDoublePageSpread(right *Page, cfg SpreadConfig) (bool, error) {

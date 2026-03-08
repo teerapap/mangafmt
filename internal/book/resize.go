@@ -14,11 +14,11 @@ import (
 	"github.com/teerapap/mangafmt/internal/log"
 )
 
-func (p *Page) ResizeToFit(screen Size) error {
+func (p *Page) ResizeToFit(screen Size, keepOrientation bool) error {
 	pageSize := p.Size()
 	pgOrient := pageSize.Orientation()
 	scrOrient := screen.Orientation()
-	if pgOrient != Square && pgOrient != scrOrient {
+	if pgOrient != Square && pgOrient != scrOrient && !keepOrientation {
 		// rotate counter-clockwise
 		log.Printf("[Resize] Rotating page because page orientation %s (%s) does not match screen orientation (%s)", pageSize, pgOrient, scrOrient)
 		p.img = imgutil.Rotate(p.img, 270)

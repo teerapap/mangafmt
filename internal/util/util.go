@@ -148,3 +148,11 @@ func CopyFileToZip(w *zip.Writer, dst string, src string) error {
 	}
 	return nil
 }
+
+func DigitCount(total int) int {
+	d := 1
+	for ; total >= 10; total = total / 10 {
+		d += 1
+	}
+	return d
+}

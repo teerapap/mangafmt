@@ -11,6 +11,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
@@ -36,7 +37,9 @@ func SaveAsCBZ(pages []Page, outFile string) error {
 		log.Printf("Packaging page....(%d/%d)", i+1, pageCount)
 		log.Indent()
 
-		err := util.CopyFileToZip(w, "", page.Filepath)
+		filenameFmt := fmt.Sprintf("%%0%dd-%%s", util.DigitCount(pageCount))
+		outFileName := fmt.Sprintf(filenameFmt, i+1, filepath.Base(page.Filepath))
+		err := util.CopyFileToZip(w, outFileName, page.Filepath)
 		if err != nil {
 			return fmt.Errorf("copying page file to the output file: %w", err)
 		}

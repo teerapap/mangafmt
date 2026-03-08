@@ -62,6 +62,10 @@
         Multiple values are separated by comma. It should match with --background otherwise the last value is used for the rest of the list. (default "0.4,0.2")
   -spread-edge uint
         Edge width for double-page spread detection (pixel) (default 2)
+  -spread-keep-orientation
+        Keep the page original orientation. Do not rotate to maximize screen area
+  -spread-keep-original
+        Keep the original left and right page
   -spread-lr-distortion float
         Two pages are considered double-page spread if the distortion between their edges are less than this threshold (percentage)[0.0-1.0] (default 0.4)
   -spread-margin uint

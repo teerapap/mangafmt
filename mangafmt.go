@@ -56,6 +56,8 @@ func init() {
 	flag.Float64Var(&trimConfig.MinSizeP, "trim-min-size", 0.85, "Minimum size after trimmed (percentage)[0.0-1.0]")
 	flag.IntVar(&trimConfig.Margin, "trim-margin", 10, "Safety trim margin (pixel)")
 	flag.BoolVar(&spreadConfig.Enabled, "spread", true, "Enable double-page spread detection and connection")
+	flag.BoolVar(&spreadConfig.KeepOrientation, "spread-keep-orientation", false, "Keep the page original orientation. Do not rotate to maximize screen area")
+	flag.BoolVar(&spreadConfig.KeepOriginal, "spread-keep-original", false, "Keep the original left and right page")
 	flag.UintVar(&spreadConfig.EdgeWidth, "spread-edge", 2, "Edge width for double-page spread detection (pixel)")
 	flag.UintVar(&spreadConfig.EdgeMargin, "spread-margin", 2, "Safety margin before edge width (pixel)")
 	flag.StringVar(&bgDistortStr, "spread-bg-distortion", "0.4,0.2", "A page is considered a single page if the distortion between its edge and background color are less than this threshold (percentage)[0.0-1.0].\nMultiple values are separated by comma. It should match with `--background` otherwise the last value is used for the rest of the list.")
@@ -204,7 +206,7 @@ func main() {
 		log.Indent()
 
 		outPage, processed := util.Must2(processEachPage(theBook, pageRange, page))(fmt.Sprintf("processing page %d", page))
-		outPages = append(outPages, *outPage)
+		outPages = append(outPages, outPage...)
 		page += processed
 		i += processed
 		log.Verbosef("next input page = %d, next output page = %d", page, len(outPages))
@@ -229,7 +231,7 @@ func main() {
 	log.Printf("Total Input %d page(s). Total Output %d pages(s).", pageRange.PageCount(), len(outPages))
 }
 
-func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*format.Page, int, error) {
+func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) ([]format.Page, int, error) {
 	processed := 0
 	current, err := theBook.LoadPage(pageNo)
 	if err != nil {
@@ -239,10 +241,15 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*forma
 
 	processed += 1
 
+	connected := false
+	var next *book.Page = nil
+
+	outPages := make([]format.Page, 0, 3)
+
 	// Look ahead next page
 	if pr.Contains(pageNo+1) && spreadConfig.Enabled { // has next page
 		// Read next page
-		next, err := theBook.LoadPage(pageNo + 1)
+		next, err = theBook.LoadPage(pageNo + 1)
 		if err != nil {
 			return nil, 0, fmt.Errorf("loading next page %d: %w", pageNo+1, err)
 		}
@@ -250,39 +257,70 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*forma
 
 		// Check if the next page can merge with current page
 		left, right := current.LeftRight(next)
-		connected, err := left.IsDoublePageSpread(right, spreadConfig)
+		connected, err = left.IsDoublePageSpread(right, spreadConfig)
 		if err != nil {
 			return nil, 0, fmt.Errorf("checking if two pages are double-page spread: %w", err)
 		}
 		if connected {
 			// connect two pages
-			if current, err = left.Connect(right); err != nil {
+			spread, err := left.Connect(right)
+			if err != nil {
 				return nil, 0, fmt.Errorf("connecting two pages: %w", err)
 			}
-			defer current.Destroy()
+			defer spread.Destroy()
 			processed += 1
+
+			// process the spread page
+			outPage, err := processSinglePage(spread, spreadConfig.KeepOrientation)
+			if err != nil {
+				return nil, 0, fmt.Errorf("processing spread page: %w", err)
+			}
+			outPages = append(outPages, *outPage)
 		}
 	}
 
+	if !connected || spreadConfig.KeepOriginal {
+		// process current page
+		outPage, err := processSinglePage(current, false)
+		if err != nil {
+			return nil, 0, fmt.Errorf("processing current page: %w", err)
+		}
+		outPages = append(outPages, *outPage)
+	}
+
+	if connected && spreadConfig.KeepOriginal {
+		// process next page
+		outPage, err := processSinglePage(next, false)
+		if err != nil {
+			return nil, 0, fmt.Errorf("processing original next page: %w", err)
+		}
+		outPages = append(outPages, *outPage)
+	}
+
+	return outPages, processed, nil
+}
+
+func processSinglePage(current *book.Page, keepOrientation bool) (*format.Page, error) {
+
 	// Trim image with fuzz
 	if err := current.Trim(trimConfig, fuzzP); err != nil {
-		return nil, 0, fmt.Errorf("trimming page: %w", err)
+		return nil, fmt.Errorf("trimming page: %w", err)
 	}
 
 	// Resize page to aspect fit screen
-	if err := current.ResizeToFit(targetSize); err != nil {
-		return nil, 0, fmt.Errorf("resizing page to fit to screen: %w", err)
+	if err := current.ResizeToFit(targetSize, keepOrientation); err != nil {
+		return nil, fmt.Errorf("resizing page to fit to screen: %w", err)
 	}
 
 	// Convert to grayscale
 	if err := current.ConvertToGrayscale(grayConfig); err != nil {
-		return nil, 0, fmt.Errorf("converting page to grayscale: %w", err)
+		return nil, fmt.Errorf("converting page to grayscale: %w", err)
 	}
 
 	// Write to filesystem
 	outFile, mediaType, err := current.WriteFile(workDir)
 	if err != nil {
-		return nil, 0, fmt.Errorf("writing to filesystem: %w", err)
+		return nil, fmt.Errorf("writing to filesystem: %w", err)
 	}
 
 	outPage := format.Page{
@@ -291,6 +329,5 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) (*forma
 		MediaType: mediaType,
 		Size:      current.Size(),
 	}
-
-	return &outPage, processed, nil
+	return &outPage, nil
 }

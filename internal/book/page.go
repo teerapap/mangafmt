@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"github.com/teerapap/mangafmt/internal/log"
+	"github.com/teerapap/mangafmt/internal/util"
 )
 
 type Page struct {
@@ -36,16 +37,8 @@ func (p Page) Size() Size {
 	return SizeFromBounds(p.img.Bounds())
 }
 
-func digitCount(total int) int {
-	d := 1
-	for ; total >= 10; total = total / 10 {
-		d += 1
-	}
-	return d
-}
-
 func (p Page) Filename(suffix string) string {
-	digits := digitCount(p.book.PageCount)
+	digits := util.DigitCount(p.book.PageCount)
 	if p.OtherPageNo > 0 { // two-page connected
 		fileFmt := fmt.Sprintf("page-%%0%dd-%%0%dd%%s", digits, digits)
 		return fmt.Sprintf(fileFmt, p.PageNo, p.OtherPageNo, suffix)

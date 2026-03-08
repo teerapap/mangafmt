@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 
 	"github.com/teerapap/mangafmt/internal/log"
+	"github.com/teerapap/mangafmt/internal/util"
 )
 
 func SaveAsRaw(pages []Page, outDir string) error {
@@ -31,7 +32,8 @@ func SaveAsRaw(pages []Page, outDir string) error {
 		log.Printf("Packaging page....(%d/%d)", i+1, pageCount)
 		log.Indent()
 
-		outFile := filepath.Join(outDir, filepath.Base(page.Filepath))
+		filenameFmt := fmt.Sprintf("%%0%dd-%%s", util.DigitCount(pageCount))
+		outFile := filepath.Join(outDir, fmt.Sprintf(filenameFmt, i+1, filepath.Base(page.Filepath)))
 
 		err := os.Rename(page.Filepath, outFile)
 		if err != nil {
