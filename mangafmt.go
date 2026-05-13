@@ -4,12 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/teerapap/mangafmt/internal/book"
 	"github.com/teerapap/mangafmt/internal/book/format"
 	"github.com/teerapap/mangafmt/internal/log"
+	"github.com/teerapap/mangafmt/internal/spread"
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
@@ -24,7 +24,6 @@ var bookTitle string
 var bookConfig book.BookConfig
 var fuzzP float64
 var trimConfig book.TrimConfig
-var bgDistortStr string
 var spreadConfig book.SpreadConfig
 var targetSize book.Size
 var grayscaleStr string
@@ -54,10 +53,9 @@ func init() {
 	flag.BoolVar(&spreadConfig.Enabled, "spread", true, "Enable double-page spread detection and connection")
 	flag.BoolVar(&spreadConfig.KeepOrientation, "spread-keep-orientation", false, "Keep the page original orientation. Do not rotate to maximize screen area")
 	flag.BoolVar(&spreadConfig.KeepOriginal, "spread-keep-original", false, "Keep the original left and right page")
-	flag.UintVar(&spreadConfig.EdgeWidth, "spread-edge", 2, "Edge width for double-page spread detection (pixel)")
-	flag.UintVar(&spreadConfig.EdgeMargin, "spread-margin", 2, "Safety margin before edge width (pixel)")
-	flag.StringVar(&bgDistortStr, "spread-bg-distortion", "0.4,0.2", "A page is considered a single page if the distortion between its edge and background color are less than this threshold (percentage)[0.0-1.0].\nMultiple values are separated by comma. It should match with `--background` otherwise the last value is used for the rest of the list.")
-	flag.Float64Var(&spreadConfig.LrDistort, "spread-lr-distortion", 0.4, "Two pages are considered double-page spread if the distortion between their edges are less than this threshold (percentage)[0.0-1.0]")
+	sd := spread.NewSpreadDetector()
+	flag.IntVar(&spreadConfig.EdgeWidth, "spread-edge", sd.EdgeStripWidth, "Edge width for double-page spread detection (pixel)")
+	flag.Float64Var(&spreadConfig.Confidence, "spread-confidence", sd.SpreadThreshold, "Confidence threshold for double-page spread detection. The higher the value, the stricter the criteria become. (percentage)[0.0-1.0]")
 	flag.UintVar(&targetSize.Width, "width", 1264, "Output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "Output screen heigt (pixel)")
 	flag.StringVar(&grayscaleStr, "grayscale", "2-", "Page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion")
@@ -93,19 +91,6 @@ func handleExit() {
 	}
 }
 
-func parseFloatList(str string) ([]float64, error) {
-	parts := strings.Split(str, ",")
-	res := make([]float64, 0, len(parts))
-	for _, part := range parts {
-		f, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
-		if err != nil {
-			return res, err
-		}
-		res = append(res, f)
-	}
-	return res, nil
-}
-
 func main() {
 	defer handleExit()
 
@@ -138,7 +123,6 @@ func main() {
 	log.Verbosef("Output: %s", outputFile)
 
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
-	spreadConfig.BgDistort = util.Must1(parseFloatList(bgDistortStr))("checking spread background distortion threshold")
 	fuzzP = max(min(fuzzP, 1.0), 0.0)
 	util.Must(book.IsSupportedColorDepth(grayConfig.ColorDepth))("checking grayscale color depth")
 
