@@ -139,7 +139,7 @@ func (i imagemagick6) Detect() error {
 
 func (i imagemagick6) Extract(inputFile string, page int, dpi float64, outputFile string) error {
 	pageFile := fmt.Sprintf("%s[%d]", inputFile, page-1)
-	cmd := exec.Command("convert", "-density", fmt.Sprintf("%0.2f", dpi), pageFile, outputFile)
+	cmd := exec.Command("convert", "-density", fmt.Sprintf("%0.2f", dpi), "-define", "pdf:use-cropbox=true", "-auto-orient", pageFile, outputFile)
 	out, err := cmd.CombinedOutput()
 	log.Verbosef("%s command: %s", i.Name(), cmd)
 	if err != nil {
@@ -164,7 +164,7 @@ func (i imagemagick7) Detect() error {
 
 func (i imagemagick7) Extract(inputFile string, page int, dpi float64, outputFile string) error {
 	pageFile := fmt.Sprintf("%s[%d]", inputFile, page-1)
-	cmd := exec.Command("magick", "-density", fmt.Sprintf("%0.2f", dpi), pageFile, outputFile)
+	cmd := exec.Command("magick", "-density", fmt.Sprintf("%0.2f", dpi), "-define", "pdf:use-cropbox=true", "-auto-orient", pageFile, outputFile)
 	out, err := cmd.CombinedOutput()
 	log.Verbosef("%s command: %s", i.Name(), cmd)
 	if err != nil {
