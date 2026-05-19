@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
 	"rsc.io/pdf"
@@ -28,6 +29,7 @@ type Book struct {
 	Title     string
 	PageCount int
 	Config    BookConfig
+	lruCache  *lru.Cache[int, Page]
 	extractor PageExtractor
 }
 
@@ -59,16 +61,29 @@ func NewBook(path string, config BookConfig) (*Book, error) {
 		return nil, err
 	}
 
+	lruCache, err := lru.New[int, Page](2)
+	if err != nil {
+		return nil, fmt.Errorf("reading input pdf file: %w", err)
+	}
+
 	return &Book{
 		Filepath:  path,
 		Title:     title,
 		PageCount: r.NumPage(),
 		Config:    config,
+		lruCache:  lruCache,
 		extractor: extractor,
 	}, nil
 }
 
 func (b *Book) LoadPage(pageNo int) (*Page, error) {
+	// load from cache first
+	cachedPage, found := b.lruCache.Get(pageNo)
+	if found {
+		log.Verbosef("Loading page %d from cache", pageNo)
+		return &cachedPage, nil
+	}
+
 	// create temp directory
 	tmpFile, err := os.CreateTemp("", "mangafmt-*.jpg")
 	if err != nil {
@@ -91,12 +106,16 @@ func (b *Book) LoadPage(pageNo int) (*Page, error) {
 	}
 	log.Verbosef("Loaded page %d at file %s with format=%s, size=%s", pageNo, filename, format, img.Bounds())
 
-	page := &Page{
+	page := Page{
 		img:    img,
 		book:   b,
 		PageNo: pageNo,
 	}
-	return page, nil
+
+	// save to cache
+	b.lruCache.Add(pageNo, page)
+
+	return &page, nil
 }
 
 type PageExtractor interface {
