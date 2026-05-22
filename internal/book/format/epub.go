@@ -18,7 +18,6 @@ import (
 
 	"github.com/hashicorp/go-uuid"
 	"github.com/teerapap/mangafmt/internal/book"
-	"github.com/teerapap/mangafmt/internal/imgutil"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
 )
@@ -111,7 +110,7 @@ func createEpub(theBook *book.Book, pages []Page) (EpubBook, error) {
 
 		epubPage := EpubPage{}
 		epubPage.Title = page.Id
-		epubPage.BgColor = imgutil.ToHexString(theBook.Config.BgColor[0])
+		epubPage.BgColor = "#FFFFFF"
 		epubPage.Width = page.Size.Width
 		epubPage.Height = page.Size.Height
 		epubPage.SrcFile = page.Filepath

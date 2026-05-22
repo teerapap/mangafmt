@@ -10,7 +10,6 @@ package book
 import (
 	"fmt"
 	"image"
-	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
@@ -36,7 +35,6 @@ type Book struct {
 type BookConfig struct {
 	Density float64
 	IsRTL   bool
-	BgColor []color.Color
 }
 
 func NewBook(path string, config BookConfig) (*Book, error) {

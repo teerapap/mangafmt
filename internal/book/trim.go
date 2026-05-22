@@ -27,9 +27,8 @@ func (p *Page) Trim(cfg TrimConfig, fuzzP float64) error {
 	// Trim image with fuzz
 	pageRect := p.Rect()
 	minSize := pageRect.size.ScaleBy(cfg.MinSizeP)
-	bgColor := p.book.Config.BgColor
 
-	tr, err := imgutil.TrimRect(p.img, bgColor[0], fuzzP)
+	tr, err := imgutil.TrimRect(p.img, fuzzP)
 	if err != nil {
 		return fmt.Errorf("finding trim box: %w", err)
 	}

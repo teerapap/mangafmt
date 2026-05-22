@@ -165,38 +165,118 @@ func AppendHorizontally(img1 image.Image, img2 image.Image) image.Image {
 	return canvas
 }
 
-func TrimRect(img image.Image, bgColor color.Color, fuzzP float64) (image.Rectangle, error) {
+// detectBackgroundColor estimates the margin color of img as the most frequent
+// color within a band along its outer edge, and returns it together with that
+// color's share of all sampled band pixels. A low share means the edge has no
+// solid border, so the color should not be trusted as a margin. Manga pages
+// almost always have a solid-color border, so the outer band is normally
+// dominated by the margin color.
+func detectBackgroundColor(img image.Image) (color.Color, float64) {
+	bounds := img.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	minX, minY := bounds.Min.X, bounds.Min.Y
+
+	// How many pixels deep to scan inward from each edge.
+	const depth = 20
+
+	counts := make(map[color.NRGBA64]int)
+	sample := func(x, y int) {
+		c := color.NRGBA64Model.Convert(img.At(minX+x, minY+y)).(color.NRGBA64)
+		counts[c]++
+	}
+
+	// Clamp band depths so the top/bottom and left/right bands never overlap
+	// each other or read out of bounds on small images.
+	topD := min(depth, height)
+	botD := min(depth, height-topD)
+	leftD := min(depth, width)
+	rightD := min(depth, width-leftD)
+
+	// Top and bottom bands span the full width.
+	for x := 0; x < width; x++ {
+		for y := 0; y < topD; y++ {
+			sample(x, y)
+		}
+		for y := height - botD; y < height; y++ {
+			sample(x, y)
+		}
+	}
+	// Left and right bands cover only the rows not already scanned above.
+	for y := topD; y < height-botD; y++ {
+		for x := 0; x < leftD; x++ {
+			sample(x, y)
+		}
+		for x := width - rightD; x < width; x++ {
+			sample(x, y)
+		}
+	}
+
+	var bg color.NRGBA64
+	best, total := 0, 0
+	for c, n := range counts {
+		total += n
+		if n > best {
+			best = n
+			bg = c
+		}
+	}
+	if total == 0 {
+		return bg, 0
+	}
+	return bg, float64(best) / float64(total)
+}
+
+// minBgDominance is the minimum fraction of edge-band pixels that must share
+// the detected background color for TrimRect to treat it as a real margin.
+// Below this, img is assumed to have no solid border and is left untrimmed.
+const minBgDominance = 0.35
+
+// TrimRect computes the rectangle remaining after trimming the solid-color
+// margin from all sides of img. The margin color is detected automatically via
+// detectBackgroundColor; if no dominant edge color is found, img is left
+// untrimmed and its full bounds are returned. All coordinates are in img's own
+// coordinate space, so sub-images (non-zero Bounds().Min) are handled correctly.
+func TrimRect(img image.Image, fuzzP float64) (image.Rectangle, error) {
 	bounds := img.Bounds()
 	if bounds.Empty() {
 		return image.Rectangle{}, nil
 	}
 
-	width, height := bounds.Dx(), bounds.Dy()
+	bgColor, bgDominance := detectBackgroundColor(img)
+	if bgDominance < minBgDominance {
+		// No dominant edge color, so there is no reliable margin to trim.
+		return bounds, nil
+	}
 
-	top, left, bottom, right := -1, -1, -1, -1
+	minX, minY := bounds.Min.X, bounds.Min.Y
+	maxX, maxY := bounds.Max.X, bounds.Max.Y
+
+	top, left, bottom, right := 0, 0, 0, 0
+	found := false
 	// start from top
 topSearch:
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := minY; y < maxY; y++ {
+		for x := minX; x < maxX; x++ {
 			c := img.At(x, y)
 			if !IsColorSimilar(c, bgColor, fuzzP) {
 				top = y
 				bottom = y
 				left = x
 				right = x
+				found = true
 				break topSearch
 			}
 		}
 	}
-	if top < 0 {
+	if !found {
 		// blank page
 		return image.Rectangle{}, nil
 	}
 
 	// start from bottom
 bottomSearch:
-	for y := height - 1; y > bottom; y-- {
-		for x := width - 1; x >= 0; x-- {
+	for y := maxY - 1; y > bottom; y-- {
+		for x := maxX - 1; x >= minX; x-- {
 			c := img.At(x, y)
 			if !IsColorSimilar(c, bgColor, fuzzP) {
 				bottom = y
@@ -209,7 +289,7 @@ bottomSearch:
 
 	// start from left
 leftSearch:
-	for x := 0; x < left; x++ {
+	for x := minX; x < left; x++ {
 		for y := top + 1; y <= bottom; y++ {
 			c := img.At(x, y)
 			if !IsColorSimilar(c, bgColor, fuzzP) {
@@ -222,7 +302,7 @@ leftSearch:
 
 	// start from right
 rightSearch:
-	for x := width - 1; x > right; x-- {
+	for x := maxX - 1; x > right; x-- {
 		for y := bottom - 1; y >= top; y-- {
 			c := img.At(x, y)
 			if !IsColorSimilar(c, bgColor, fuzzP) {

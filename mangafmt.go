@@ -3,14 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"image/color"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/teerapap/mangafmt/internal/book"
 	"github.com/teerapap/mangafmt/internal/book/format"
-	"github.com/teerapap/mangafmt/internal/imgutil"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
 )
@@ -23,7 +21,6 @@ var workDir string
 var pageRangeStr string
 var pageRange = book.NewPageRange()
 var bookTitle string
-var bgColorStr string
 var bookConfig book.BookConfig
 var fuzzP float64
 var trimConfig book.TrimConfig
@@ -48,7 +45,6 @@ func init() {
 	flag.StringVar(&pageRangeStr, "pages", "1-", "Page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end.")
 	flag.StringVar(&bookTitle, "title", "", "Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
 	flag.Float64Var(&bookConfig.Density, "density", 300.0, "Output density (DPI)")
-	flag.StringVar(&bgColorStr, "background", "#FFFFFF,#000000", "Background color(s) separated by comma. The first color is the main background color.")
 	flag.BoolVar(&bookConfig.IsRTL, "rtl", false, "Right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&bookConfig.IsRTL, "right-to-left", false, "Right-to-left read direction (ex. Japanese manga)")
 	flag.Float64Var(&fuzzP, "fuzz", 0.1, "Color fuzz (percentage)[0.0-1.0]")
@@ -97,22 +93,6 @@ func handleExit() {
 	}
 }
 
-func parseColorHexList(str string) ([]color.Color, error) {
-	parts := strings.Split(str, ",")
-	res := make([]color.Color, 0, len(parts))
-	for _, part := range parts {
-		c, err := imgutil.ParseColorHex(strings.TrimSpace(part))
-		if err != nil {
-			return res, err
-		}
-		res = append(res, c)
-	}
-	if len(res) == 0 {
-		return res, fmt.Errorf("require at least one color")
-	}
-	return res, nil
-}
-
 func parseFloatList(str string) ([]float64, error) {
 	parts := strings.Split(str, ",")
 	res := make([]float64, 0, len(parts))
@@ -157,7 +137,6 @@ func main() {
 	}
 	log.Verbosef("Output: %s", outputFile)
 
-	bookConfig.BgColor = util.Must1(parseColorHexList(bgColorStr))("checking background color")
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
 	spreadConfig.BgDistort = util.Must1(parseFloatList(bgDistortStr))("checking spread background distortion threshold")
 	fuzzP = max(min(fuzzP, 1.0), 0.0)

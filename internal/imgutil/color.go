@@ -8,28 +8,11 @@
 package imgutil
 
 import (
-	"fmt"
 	"image/color"
 )
 
 const ColorRange = 0xffff // 16-bit color
 const Epsilon = 1.0e-12
-
-func ParseColorHex(str string) (color.Color, error) {
-	if len(str) != 7 {
-		return nil, fmt.Errorf("color(%s) must be in hex format #ffffff or #FFFFFF: invalid length", str)
-	}
-	c := color.RGBA{A: 0xFF}
-	if _, err := fmt.Sscanf(str, "#%02x%02x%02x", &c.R, &c.G, &c.B); err != nil {
-		return nil, fmt.Errorf("color(%s) must be in hex format #ffffff or #FFFFFF: %w", str, err)
-	}
-	return c, nil
-}
-
-func ToHexString(c color.Color) string {
-	rgb := color.RGBAModel.Convert(c).(color.RGBA)
-	return fmt.Sprintf("#%02x%02x%02x", rgb.R, rgb.G, rgb.B)
-}
 
 func FuzzFromPercent(fp float64) float64 {
 	return fp * float64(ColorRange)
