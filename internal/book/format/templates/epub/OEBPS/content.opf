@@ -8,8 +8,8 @@
         <dc:creator>{{ .Creator }}</dc:creator>
         <meta property="dcterms:modified">{{ .ModifiedDatetime }}</meta>
 		<meta name="{{ .Cover.Id }}" content="cover"/>
-        <meta property="rendition:orientation">portrait</meta>
-        <meta property="rendition:spread">portrait</meta>
+        <meta property="rendition:orientation">auto</meta>
+        <meta property="rendition:spread">auto</meta>
         <meta property="rendition:layout">pre-paginated</meta>
     </metadata>
     <manifest>
@@ -24,7 +24,7 @@
     </manifest>
     <spine page-progression-direction="{{if .IsRTL }}rtl{{else}}ltr{{end}}" toc="ncx">
         {{range .Pages}}
-        <itemref idref="{{ .Xhtml.Id }}"/>
+        <itemref idref="{{ .Xhtml.Id }}" properties="{{ .Xhtml.Properties }}" />
         {{end}}
     </spine>
 </package>

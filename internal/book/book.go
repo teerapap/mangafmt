@@ -26,6 +26,7 @@ import (
 type Book struct {
 	Filepath  string
 	Title     string
+	Author    string
 	PageCount int
 	Config    BookConfig
 	lruCache  *lru.Cache[int, Page]

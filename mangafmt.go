@@ -21,6 +21,7 @@ var workDir string
 var pageRangeStr string
 var pageRange = book.NewPageRange()
 var bookTitle string
+var bookAuthor string
 var bookConfig book.BookConfig
 var fuzzP float64
 var trimConfig book.TrimConfig
@@ -43,6 +44,7 @@ func init() {
 	flag.StringVar(&workDir, "work-dir", "", "Work directory path. Unspecified or blank means using system temp path")
 	flag.StringVar(&pageRangeStr, "pages", "1-", "Page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end.")
 	flag.StringVar(&bookTitle, "title", "", "Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
+	flag.StringVar(&bookAuthor, "author", "", "Book author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'")
 	flag.Float64Var(&bookConfig.Density, "density", 300.0, "Output density (DPI)")
 	flag.BoolVar(&bookConfig.IsRTL, "rtl", false, "Right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&bookConfig.IsRTL, "right-to-left", false, "Right-to-left read direction (ex. Japanese manga)")
@@ -131,6 +133,10 @@ func main() {
 	bookTitle = strings.TrimSpace(bookTitle)
 	if bookTitle != "" {
 		theBook.Title = bookTitle
+	}
+	bookAuthor = strings.TrimSpace(bookAuthor)
+	if bookAuthor != "" {
+		theBook.Author = bookAuthor
 	}
 	log.Printf("Total Number of Pages: %d", theBook.PageCount)
 

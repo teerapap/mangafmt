@@ -75,9 +75,10 @@ type EpubPage struct {
 }
 
 type EpubPageItem struct {
-	Id        string
-	Url       string
-	MediaType string
+	Id         string
+	Properties string
+	Url        string
+	MediaType  string
 }
 
 func createEpub(theBook *book.Book, pages []Page) (EpubBook, error) {
@@ -93,9 +94,12 @@ func createEpub(theBook *book.Book, pages []Page) (EpubBook, error) {
 	epub.Title = html.EscapeString(theBook.Title)
 	epub.TotalPageCount = len(pages)
 	epub.IsRTL = theBook.Config.IsRTL
-	appVersion := fmt.Sprintf("mangafmt-%s", util.AppVersion)
-	epub.Contributor = appVersion
-	epub.Creator = appVersion
+	epub.Contributor = fmt.Sprintf("mangafmt-%s", util.AppVersion)
+	if theBook.Author == "" {
+		epub.Creator = "Anonymous"
+	} else {
+		epub.Creator = theBook.Author
+	}
 	epub.ModifiedDatetime = time.Now().Format(time.RFC3339)
 
 	epub.Pages = make([]EpubPage, 0, len(pages))
