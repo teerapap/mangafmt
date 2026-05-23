@@ -1,5 +1,26 @@
 # CHANGELOG.md
 
+## v0.6.0 (2026-05-24)
+
+Features:
+
+* Detect background automatically when trimming margin borders.
+  * Remove `-background` flag.
+* Support `-author` for EPUB/KEPUB format output.
+
+Bug Fixes:
+
+* Fix ImageMagick6/7 page extraction to apply auto-orientation and cropbox functions in pdf.
+
+Improvements:
+
+* Improve double-page spread detection by adding more heuristic signals with the help from Claude code.
+  * Add `-spread-confidence` flag.
+  * Remove `-spread-margin` flag.
+  * Remove `-spread-bg-distortion` flag.
+  * Remove `-spread-lr-distortion` flag.
+* Speed-up loading page by using LRU cache.
+
 ## v0.5.0 (2026-03-09)
 
 Features:

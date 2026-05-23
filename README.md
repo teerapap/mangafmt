@@ -26,8 +26,8 @@
 
 ```
 ./mangafmt [options] <input_pdf_file>
-  -background string
-        Background color(s) separated by comma. The first color is the main background color. (default "#FFFFFF,#000000")
+  -author string
+        Book author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'
   -density float
         Output density (DPI) (default 300)
   -format value
@@ -57,19 +57,14 @@
         Right-to-left read direction (ex. Japanese manga)
   -spread
         Enable double-page spread detection and connection (default true)
-  -spread-bg-distortion --background
-        A page is considered a single page if the distortion between its edge and background color are less than this threshold (percentage)[0.0-1.0].
-        Multiple values are separated by comma. It should match with --background otherwise the last value is used for the rest of the list. (default "0.4,0.2")
+  -spread-confidence float
+        Confidence threshold for double-page spread detection. The higher the value, the stricter the criteria become. (percentage)[0.0-1.0] (default 0.55)
   -spread-edge uint
-        Edge width for double-page spread detection (pixel) (default 2)
+        Edge width for double-page spread detection (pixel) (default 30)
   -spread-keep-orientation
         Keep the page original orientation. Do not rotate to maximize screen area
   -spread-keep-original
         Keep the original left and right page
-  -spread-lr-distortion float
-        Two pages are considered double-page spread if the distortion between their edges are less than this threshold (percentage)[0.0-1.0] (default 0.4)
-  -spread-margin uint
-        Safety margin before edge width (pixel) (default 2)
   -title string
         Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension
   -trim
