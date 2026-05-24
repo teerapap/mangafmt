@@ -26,11 +26,13 @@ var bookConfig book.BookConfig
 var fuzzP float64
 var trimConfig book.TrimConfig
 var spreadConfig book.SpreadConfig
+var resize bool
 var targetSize book.Size
 var grayscaleStr string
 var grayConfig book.GrayscaleConfig
 var outputFile string
 var outputFormat format.OutputFormat
+var convertOnly bool
 
 func init() {
 	flag.Usage = func() {
@@ -58,10 +60,12 @@ func init() {
 	sd := spread.NewSpreadDetector()
 	flag.IntVar(&spreadConfig.EdgeWidth, "spread-edge", sd.EdgeStripWidth, "Edge width for double-page spread detection (pixel)")
 	flag.Float64Var(&spreadConfig.Confidence, "spread-confidence", sd.SpreadThreshold, "Confidence threshold for double-page spread detection. The higher the value, the stricter the criteria become. (percentage)[0.0-1.0]")
+	flag.BoolVar(&resize, "resize", true, "Resize to aspect fit in output screen size")
 	flag.UintVar(&targetSize.Width, "width", 1264, "Output screen width (pixel)")
 	flag.UintVar(&targetSize.Height, "height", 1680, "Output screen heigt (pixel)")
 	flag.StringVar(&grayscaleStr, "grayscale", "2-", "Page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion")
 	flag.UintVar(&grayConfig.ColorDepth, "grayscale-depth", 4, "Grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. No upscale if source image is in lower depth.")
+	flag.BoolVar(&convertOnly, "convert-only", false, "Convert from input to output format only without any modification to the pages at all")
 	flag.Var(&outputFormat, "format", "Output file format. The supported formats\n\t- raw (default)\n\t- cbz\n\t- epub\n\t- kepub")
 	flag.StringVar(&outputFile, "output", "", "Output file. Unspecified or blank means using the same file name as input file")
 }
@@ -145,6 +149,14 @@ func main() {
 	if strings.ToLower(grayscaleStr) != "false" {
 		grayConfig.PageRange = book.NewPageRange()
 		util.Must(grayConfig.PageRange.Parse(grayscaleStr, theBook.PageCount))(fmt.Sprintf("parsing grayscale page range(%s)", grayscaleStr))
+	}
+
+	if convertOnly {
+		// disable all modification
+		trimConfig.Enabled = false
+		spreadConfig.Enabled = false
+		grayConfig.PageRange = nil
+		resize = false
 	}
 
 	// Create work dir
@@ -277,8 +289,10 @@ func processSinglePage(current *book.Page, keepOrientation bool) (*format.Page, 
 	}
 
 	// Resize page to aspect fit screen
-	if err := current.ResizeToFit(targetSize, keepOrientation); err != nil {
-		return nil, fmt.Errorf("resizing page to fit to screen: %w", err)
+	if resize {
+		if err := current.ResizeToFit(targetSize, keepOrientation); err != nil {
+			return nil, fmt.Errorf("resizing page to fit to screen: %w", err)
+		}
 	}
 
 	// Convert to grayscale
