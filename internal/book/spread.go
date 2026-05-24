@@ -23,7 +23,8 @@ type SpreadConfig struct {
 	Confidence      float64
 }
 
-func (left *Page) IsDoublePageSpread(right *Page, cfg SpreadConfig) (bool, error) {
+func (left *Page) IsDoublePageSpread(right *Page, cfg SpreadConfig, logger log.Logger) (bool, error) {
+	logger = logger.Indent("> Spread ")
 	sd := spread.NewSpreadDetector()
 	sd.EdgeStripWidth = cfg.EdgeWidth
 	sd.SpreadThreshold = cfg.Confidence
@@ -31,18 +32,21 @@ func (left *Page) IsDoublePageSpread(right *Page, cfg SpreadConfig) (bool, error
 	if err != nil {
 		return false, fmt.Errorf("check two-page spread: %w", err)
 	}
+
+	logger.Debug("Spread detection", "result", result)
 	if result.IsSpread {
 		// they are double-page spread
-		log.Printf("[Spread] Page %d and %d are DOUBLE-PAGE SPREAD! - %+v", left.PageNo, right.PageNo, result)
+		logger.Info("DOUBLE-PAGE SPREAD!", "left", left.PageNo, "right", right.PageNo, "reason", result.Reason)
 	} else {
-		log.Printf("[Spread] Page %d and %d are NOT double-page spread - %+v", left.PageNo, right.PageNo, result)
+		logger.Info("NOT double-page spread", "left", left.PageNo, "right", right.PageNo, "reason", result.Reason)
 	}
 
 	return result.IsSpread, nil
 }
 
-func (left *Page) Connect(right *Page) (*Page, error) {
-	connected := imgutil.AppendHorizontally(left.img, right.img)
+func (left *Page) Connect(right *Page, logger log.Logger) (*Page, error) {
+	logger = logger.Indent("> Spread ")
+	connected := imgutil.AppendHorizontally(left.img, right.img, logger)
 
 	newPage := &Page{
 		img:         connected,

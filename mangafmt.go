@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	clog "charm.land/log/v2"
+
 	"github.com/teerapap/mangafmt/internal/book"
 	"github.com/teerapap/mangafmt/internal/book/format"
 	"github.com/teerapap/mangafmt/internal/log"
@@ -72,7 +74,7 @@ func init() {
 
 func helpUsage(msg string) {
 	if msg != "" {
-		log.Error(msg)
+		clog.Error(msg)
 	}
 	fmt.Fprintf(flag.CommandLine.Output(), "%s [options] <input_pdf_file>\n", os.Args[0])
 	flag.PrintDefaults()
@@ -91,7 +93,7 @@ func handleExit() {
 	if !verbose {
 		if r := recover(); r != nil {
 			// exit gracefully if not verbose
-			log.Errorf("%s", r)
+			clog.Errorf("%s", r)
 			os.Exit(1)
 		}
 	}
@@ -103,10 +105,18 @@ func main() {
 	// Parse command-line
 	flag.Parse()
 	inputFile := flag.Arg(0)
-	log.SetVerbose(verbose)
+	if verbose {
+		clog.SetLevel(clog.DebugLevel)
+	} else {
+		clog.SetLevel(clog.InfoLevel)
+	}
+	clogger := clog.NewWithOptions(os.Stdout, clog.Options{
+		Level:           clog.GetLevel(),
+		ReportTimestamp: true,
+	})
+	logger := log.Wrap(clogger)
 
-	log.Verbosef("mangafmt-%s", util.AppVersion)
-	log.Verbosef("%s", os.Args)
+	logger.Debug("mangafmt", "ver", util.AppVersion, "args", os.Args)
 
 	if help {
 		flag.Usage()
@@ -119,21 +129,28 @@ func main() {
 		os.Exit(1)
 	}
 	inputFile = util.Must1(util.IsReadableFile(inputFile))("checking input file path")
-	log.Verbosef("Input: %s", inputFile)
+	logger.Debug("Input", "file", inputFile)
 	outputFile = strings.TrimSpace(outputFile)
 	if outputFile == "" {
 		outputFile = util.ReplaceExt(inputFile, outputFormat.Ext())
 	} else {
 		outputFile = util.Must1(util.IsWritableFile(outputFile))("checking output file path")
 	}
-	log.Verbosef("Output: %s", outputFile)
+	logger.Debug("Output", "file", outputFile)
 
 	trimConfig.MinSizeP = max(min(trimConfig.MinSizeP, 1.0), 0.0)
 	fuzzP = max(min(fuzzP, 1.0), 0.0)
 	util.Must(book.IsSupportedColorDepth(grayConfig.ColorDepth))("checking grayscale color depth")
 
+	// Create work dir
+	util.Must1(util.CreateWorkDir(&workDir, true))("creating work directory")
+	defer os.RemoveAll(workDir)
+	logger.Debug("Work directory", "path", workDir)
+
+	logger = logger.Indent("> Book ")
+
 	// Load input book file
-	theBook := util.Must1(book.NewBook(inputFile, bookConfig))("loading book")
+	theBook := util.Must1(book.NewBook(inputFile, bookConfig, logger))("loading book")
 	bookTitle = strings.TrimSpace(bookTitle)
 	if bookTitle != "" {
 		theBook.Title = bookTitle
@@ -142,7 +159,7 @@ func main() {
 	if bookAuthor != "" {
 		theBook.Author = bookAuthor
 	}
-	log.Printf("Total Number of Pages: %d", theBook.PageCount)
+	logger.Infof("Total Number of Pages: %d", theBook.PageCount)
 
 	// Parse page range arguments
 	util.Must(pageRange.Parse(pageRangeStr, theBook.PageCount))(fmt.Sprintf("parsing page range(%s)", pageRangeStr))
@@ -159,19 +176,13 @@ func main() {
 		resize = false
 	}
 
-	// Create work dir
-	util.Must1(util.CreateWorkDir(&workDir, true))("creating work directory")
-	defer os.RemoveAll(workDir)
-	log.Verbosef("Work directory: %s", workDir)
-
 	// For loop each page
 	partials := pageRange.PageCount() != theBook.PageCount
 	if partials {
-		log.Printf("Start processing page(s) in range %s. Total %d page(s).", pageRange, pageRange.PageCount())
+		logger.Infof("Start formatting page(s) in range %s. Total %d page(s).", pageRange, pageRange.PageCount())
 	} else {
-		log.Printf("Start processing. Total %d page(s).", pageRange.PageCount())
+		logger.Infof("Start formatting. Total %d page(s).", pageRange.PageCount())
 	}
-	log.Indent()
 
 	outPages := make([]format.Page, 0, theBook.PageCount)
 	for page, i := 1, 1; page <= theBook.PageCount; {
@@ -180,47 +191,43 @@ func main() {
 			continue
 		}
 		if partials {
-			log.Printf("Processing page %d....(%d/%d)", page, i, pageRange.PageCount())
+			logger.Infof("Formatting page %d....(%d/%d)", page, i, pageRange.PageCount())
 		} else {
-			log.Printf("Processing page....(%d/%d)", page, theBook.PageCount)
+			logger.Infof("Formatting page....(%d/%d)", page, theBook.PageCount)
 		}
-		log.Indent()
 
-		outPage, processed := util.Must2(processEachPage(theBook, pageRange, page))(fmt.Sprintf("processing page %d", page))
+		pageLogger := logger.Indent(fmt.Sprintf("> Page[%d] ", page))
+		outPage, formatted := util.Must2(formatEachPage(theBook, pageRange, page, pageLogger))(fmt.Sprintf("formatting page %d", page))
 		outPages = append(outPages, outPage...)
-		page += processed
-		i += processed
-		log.Verbosef("next input page = %d, next output page = %d", page, len(outPages))
-
-		log.Unindent()
+		page += formatted
+		i += formatted
+		logger.Debug("Done formatting page -", "next_input_page", page, "next_output_page", len(outPages))
 	}
-	log.Unindent()
-	log.Printf("Done processing.")
-	log.Printf("Total Input %d page(s). Total Output %d pages(s).", pageRange.PageCount(), len(outPages))
+	logger.Info("Done formatting book -", "total_input_pages", pageRange.PageCount(), "total_output_pages", len(outPages))
 
 	// Packaging
 	switch outputFormat {
 	case format.RAW:
-		util.Must(format.SaveAsRaw(outPages, outputFile))("saving in raw format")
+		util.Must(format.SaveAsRaw(outPages, outputFile, logger))("saving in raw format")
 	case format.CBZ:
-		util.Must(format.SaveAsCBZ(outPages, outputFile))("saving in cbz format")
+		util.Must(format.SaveAsCBZ(outPages, outputFile, logger))("saving in cbz format")
 	case format.EPUB:
-		util.Must(format.SaveAsEPUB(theBook, outPages, outputFile))("saving in epub format")
+		util.Must(format.SaveAsEPUB(theBook, outPages, outputFile, logger))("saving in epub format")
 	case format.KEPUB:
-		util.Must(format.SaveAsKEPUB(theBook, outPages, outputFile))("saving in kepub format")
+		util.Must(format.SaveAsKEPUB(theBook, outPages, outputFile, logger))("saving in kepub format")
 	}
-	log.Printf("Total Input %d page(s). Total Output %d pages(s).", pageRange.PageCount(), len(outPages))
+	logger.Infof("Total Input %d page(s). Total Output %d pages(s).", pageRange.PageCount(), len(outPages))
 }
 
-func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) ([]format.Page, int, error) {
-	processed := 0
-	current, err := theBook.LoadPage(pageNo)
+func formatEachPage(theBook *book.Book, pr *book.PageRange, pageNo int, logger log.Logger) ([]format.Page, int, error) {
+	formatted := 0
+	current, err := theBook.LoadPage(pageNo, logger)
 	if err != nil {
 		return nil, 0, fmt.Errorf("loading page %d: %w", pageNo, err)
 	}
 	defer current.Destroy()
 
-	processed += 1
+	formatted += 1
 
 	connected := false
 	var next *book.Page = nil
@@ -230,7 +237,7 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) ([]form
 	// Look ahead next page
 	if pr.Contains(pageNo+1) && spreadConfig.Enabled { // has next page
 		// Read next page
-		next, err = theBook.LoadPage(pageNo + 1)
+		next, err = theBook.LoadPage(pageNo+1, logger)
 		if err != nil {
 			return nil, 0, fmt.Errorf("loading next page %d: %w", pageNo+1, err)
 		}
@@ -238,70 +245,70 @@ func processEachPage(theBook *book.Book, pr *book.PageRange, pageNo int) ([]form
 
 		// Check if the next page can merge with current page
 		left, right := current.LeftRight(next)
-		connected, err = left.IsDoublePageSpread(right, spreadConfig)
+		connected, err = left.IsDoublePageSpread(right, spreadConfig, logger)
 		if err != nil {
 			return nil, 0, fmt.Errorf("checking if two pages are double-page spread: %w", err)
 		}
 		if connected {
 			// connect two pages
-			spread, err := left.Connect(right)
+			spread, err := left.Connect(right, logger)
 			if err != nil {
 				return nil, 0, fmt.Errorf("connecting two pages: %w", err)
 			}
 			defer spread.Destroy()
-			processed += 1
+			formatted += 1
 
-			// process the spread page
-			outPage, err := processSinglePage(spread, spreadConfig.KeepOrientation)
+			// format the spread page
+			outPage, err := formatSinglePage(spread, spreadConfig.KeepOrientation, logger)
 			if err != nil {
-				return nil, 0, fmt.Errorf("processing spread page: %w", err)
+				return nil, 0, fmt.Errorf("formatting spread page: %w", err)
 			}
 			outPages = append(outPages, *outPage)
 		}
 	}
 
 	if !connected || spreadConfig.KeepOriginal {
-		// process current page
-		outPage, err := processSinglePage(current, false)
+		// format current page
+		outPage, err := formatSinglePage(current, false, logger)
 		if err != nil {
-			return nil, 0, fmt.Errorf("processing current page: %w", err)
+			return nil, 0, fmt.Errorf("formatting current page: %w", err)
 		}
 		outPages = append(outPages, *outPage)
 	}
 
 	if connected && spreadConfig.KeepOriginal {
-		// process next page
-		outPage, err := processSinglePage(next, false)
+		// format next page
+		outPage, err := formatSinglePage(next, false, logger)
 		if err != nil {
-			return nil, 0, fmt.Errorf("processing original next page: %w", err)
+			return nil, 0, fmt.Errorf("formatting original next page: %w", err)
 		}
 		outPages = append(outPages, *outPage)
 	}
 
-	return outPages, processed, nil
+	return outPages, formatted, nil
 }
 
-func processSinglePage(current *book.Page, keepOrientation bool) (*format.Page, error) {
+func formatSinglePage(current *book.Page, keepOrientation bool, logger log.Logger) (*format.Page, error) {
 
 	// Trim image with fuzz
-	if err := current.Trim(trimConfig, fuzzP); err != nil {
+	if err := current.Trim(trimConfig, fuzzP, logger); err != nil {
 		return nil, fmt.Errorf("trimming page: %w", err)
 	}
 
 	// Resize page to aspect fit screen
 	if resize {
-		if err := current.ResizeToFit(targetSize, keepOrientation); err != nil {
+		if err := current.ResizeToFit(targetSize, keepOrientation, logger); err != nil {
 			return nil, fmt.Errorf("resizing page to fit to screen: %w", err)
 		}
 	}
 
 	// Convert to grayscale
-	if err := current.ConvertToGrayscale(grayConfig); err != nil {
+	if err := current.ConvertToGrayscale(grayConfig, logger); err != nil {
 		return nil, fmt.Errorf("converting page to grayscale: %w", err)
 	}
 
 	// Write to filesystem
-	outFile, mediaType, err := current.WriteFile(workDir)
+	outFile, mediaType, err := current.WriteFile(workDir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("writing to filesystem: %w", err)
 	}

@@ -19,7 +19,7 @@ import (
 	"golang.org/x/image/math/f64"
 )
 
-func NewCanvasSameColor(src image.Image, r image.Rectangle) draw.Image {
+func NewCanvasSameColor(src image.Image, r image.Rectangle, logger log.Logger) draw.Image {
 	switch v := src.(type) {
 	case *image.Alpha:
 		return image.NewAlpha(r)
@@ -50,7 +50,7 @@ func NewCanvasSameColor(src image.Image, r image.Rectangle) draw.Image {
 	case *image.YCbCr:
 		return image.NewRGBA(r)
 	default:
-		log.Printf("unexpected image.Image: %#v", src)
+		logger.Warn("unexpected image.Image -", "img", src)
 		return image.NewRGBA(r)
 	}
 }
@@ -74,7 +74,7 @@ func ColorDepth(src image.Image) uint {
 	}
 }
 
-func TransformToGrayColorModel(img image.Image) image.Image {
+func TransformToGrayColorModel(img image.Image, logger log.Logger) image.Image {
 	switch img.(type) {
 	case *image.Gray16, *image.Gray:
 		return img
@@ -90,7 +90,7 @@ func TransformToGrayColorModel(img image.Image) image.Image {
 	return dst
 }
 
-func QuantizeAndDither(img image.Image, numColor int) *image.Paletted {
+func QuantizeAndDither(img image.Image, numColor int, logger log.Logger) *image.Paletted {
 	q := quantize.MedianCutQuantizer{}
 	pal := q.Quantize(make(color.Palette, 0, numColor), img)
 
@@ -99,15 +99,15 @@ func QuantizeAndDither(img image.Image, numColor int) *image.Paletted {
 	return dst
 }
 
-func Resize(src image.Image, size image.Point) image.Image {
-	canvas := NewCanvasSameColor(src, image.Rect(0, 0, size.X, size.Y))
+func Resize(src image.Image, size image.Point, logger log.Logger) image.Image {
+	canvas := NewCanvasSameColor(src, image.Rect(0, 0, size.X, size.Y), logger)
 
 	// Resize
 	drawx.CatmullRom.Scale(canvas, canvas.Bounds(), src, src.Bounds(), draw.Src, nil)
 	return canvas
 }
 
-func Rotate(src image.Image, degree float64) image.Image {
+func Rotate(src image.Image, degree float64, logger log.Logger) image.Image {
 	rad := degree * math.Pi / float64(180.0)
 
 	// Rotation matrix
@@ -119,7 +119,7 @@ func Rotate(src image.Image, degree float64) image.Image {
 	width := int((mm[0] * float64(size.X)) + (mm[1] * float64(size.Y)))
 	height := int((mm[3] * float64(size.X)) + (mm[4] * float64(size.Y)))
 
-	canvas := NewCanvasSameColor(src, image.Rect(0, 0, width, height))
+	canvas := NewCanvasSameColor(src, image.Rect(0, 0, width, height), logger)
 
 	// Rotation Transform
 	drawx.CatmullRom.Transform(canvas, mm, src, src.Bounds(), draw.Src, nil)
@@ -130,7 +130,7 @@ type subImager interface {
 	SubImage(r image.Rectangle) image.Image
 }
 
-func CropImage(src image.Image, rect image.Rectangle) image.Image {
+func CropImage(src image.Image, rect image.Rectangle, logger log.Logger) image.Image {
 	if img, ok := src.(subImager); ok {
 		return img.SubImage(rect)
 	}
@@ -138,13 +138,13 @@ func CropImage(src image.Image, rect image.Rectangle) image.Image {
 	dst := NewCanvasSameColor(src, image.Rectangle{
 		Min: image.Pt(0, 0),
 		Max: rect.Size(),
-	})
+	}, logger)
 
 	draw.Draw(dst, dst.Bounds(), src, rect.Min, draw.Src)
 	return dst
 }
 
-func AppendHorizontally(img1 image.Image, img2 image.Image) image.Image {
+func AppendHorizontally(img1 image.Image, img2 image.Image, logger log.Logger) image.Image {
 	r1 := img1.Bounds().Size()
 	r2 := img2.Bounds().Size()
 
@@ -153,7 +153,7 @@ func AppendHorizontally(img1 image.Image, img2 image.Image) image.Image {
 		Max: image.Pt(r1.X+r2.X, max(r1.Y, r2.Y)),
 	}
 
-	canvas := NewCanvasSameColor(img1, r)
+	canvas := NewCanvasSameColor(img1, r, logger)
 	draw.Draw(canvas, image.Rectangle{
 		Min: r.Min,
 		Max: r1,
@@ -236,7 +236,7 @@ const minBgDominance = 0.35
 // detectBackgroundColor; if no dominant edge color is found, img is left
 // untrimmed and its full bounds are returned. All coordinates are in img's own
 // coordinate space, so sub-images (non-zero Bounds().Min) are handled correctly.
-func TrimRect(img image.Image, fuzzP float64) (image.Rectangle, error) {
+func TrimRect(img image.Image, fuzzP float64, logger log.Logger) (image.Rectangle, error) {
 	bounds := img.Bounds()
 	if bounds.Empty() {
 		return image.Rectangle{}, nil

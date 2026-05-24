@@ -36,7 +36,8 @@ func IsSupportedColorDepth(depth uint) error {
 	return fmt.Errorf("unsupported color depth: %d-bits", depth)
 }
 
-func (p *Page) ConvertToGrayscale(cfg GrayscaleConfig) error {
+func (p *Page) ConvertToGrayscale(cfg GrayscaleConfig, logger log.Logger) error {
+	logger = logger.Indent("> Gray   ")
 	pr := cfg.PageRange
 	if pr == nil {
 		return nil
@@ -45,14 +46,14 @@ func (p *Page) ConvertToGrayscale(cfg GrayscaleConfig) error {
 	}
 	srcColorDepth := imgutil.ColorDepth(p.img)
 	if cfg.ColorDepth < srcColorDepth {
-		log.Printf("[Grayscale] Converting to grayscale %d-bit colors from %d-bit colors", cfg.ColorDepth, srcColorDepth)
+		logger.Infof("Converting to grayscale %d-bit colors from %d-bit colors", cfg.ColorDepth, srcColorDepth)
 	} else {
-		log.Printf("[Grayscale] Converting to grayscale while keeping %d-bit colors", srcColorDepth)
+		logger.Infof("Converting to grayscale while keeping %d-bit colors", srcColorDepth)
 	}
-	p.img = imgutil.TransformToGrayColorModel(p.img)
+	p.img = imgutil.TransformToGrayColorModel(p.img, logger)
 	if cfg.ColorDepth < srcColorDepth { // need quantize and dither
 		numColor := uint(math.Pow(2, float64(cfg.ColorDepth)))
-		p.img = imgutil.QuantizeAndDither(p.img, int(numColor))
+		p.img = imgutil.QuantizeAndDither(p.img, int(numColor), logger)
 	}
 
 	return nil

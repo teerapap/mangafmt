@@ -22,19 +22,17 @@ import (
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsEPUB(theBook *book.Book, pages []Page, outFile string) error {
-	return save("EPUB", theBook, pages, outFile)
+func SaveAsEPUB(theBook *book.Book, pages []Page, outFile string, logger log.Logger) error {
+	return save("EPUB", theBook, pages, outFile, logger)
 }
 
-func SaveAsKEPUB(theBook *book.Book, pages []Page, outFile string) error {
-	return save("KEPUB", theBook, pages, outFile)
+func SaveAsKEPUB(theBook *book.Book, pages []Page, outFile string, logger log.Logger) error {
+	return save("KEPUB", theBook, pages, outFile, logger)
 }
 
-func save(format string, theBook *book.Book, pages []Page, outFile string) error {
-	defer log.SetIndentLevel(log.IndentLevel()) // reset indent level after return
-
-	log.Printf("Start packaging in %s format to %s", format, outFile)
-	log.Indent()
+func save(format string, theBook *book.Book, pages []Page, outFile string, logger log.Logger) error {
+	logger = logger.Indent("> Package > " + format + " ")
+	logger.Info("Start packaging", "file", outFile)
 
 	// create epub structure
 	epub, err := createEpub(theBook, pages)
@@ -43,7 +41,7 @@ func save(format string, theBook *book.Book, pages []Page, outFile string) error
 	}
 
 	// write epub stucture to file
-	err = writeEpub(epub, outFile)
+	err = writeEpub(epub, outFile, logger)
 	if err != nil {
 		return fmt.Errorf("creating epub file: %w", err)
 	}
@@ -162,7 +160,7 @@ var styleTmpl = util.CreateTemplate("epub/OEBPS/Text/style.css", styleTmplStr)
 var pageTmplStr string
 var pageTmpl = util.CreateTemplate("epub/OEBPS/Text/page.xhtml", pageTmplStr)
 
-func writeEpub(epub EpubBook, outFile string) error {
+func writeEpub(epub EpubBook, outFile string, logger log.Logger) error {
 
 	zipFile, err := os.Create(outFile)
 	if err != nil {
@@ -173,7 +171,7 @@ func writeEpub(epub EpubBook, outFile string) error {
 	w := zip.NewWriter(zipFile)
 	defer w.Close()
 
-	log.Print("Writing metadata files...")
+	logger.Info("Writing metadata files...")
 	err = util.WriteFileToZip(w, "mimetype", mimetypeTmpl, epub)
 	if err != nil {
 		return fmt.Errorf("writing metadata to the output file: %w", err)
@@ -200,8 +198,7 @@ func writeEpub(epub EpubBook, outFile string) error {
 	}
 
 	for i, page := range epub.Pages {
-		log.Printf("Packaging page....(%d/%d)", i+1, epub.TotalPageCount)
-		log.Indent()
+		logger.Infof("Packaging page....(%d/%d)", i+1, epub.TotalPageCount)
 
 		err := util.WriteFileToZip(w, fmt.Sprintf("OEBPS/%s", page.Xhtml.Url), pageTmpl, page)
 		if err != nil {
@@ -211,10 +208,7 @@ func writeEpub(epub EpubBook, outFile string) error {
 		if err != nil {
 			return fmt.Errorf("copying page(%d) image file to the output file: %w", i+1, err)
 		}
-
-		log.Unindent()
 	}
-	log.Unindent()
-	log.Printf("Done packaging.")
+	logger.Info("Done packaging")
 	return nil
 }

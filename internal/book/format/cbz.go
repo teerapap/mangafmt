@@ -17,10 +17,9 @@ import (
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsCBZ(pages []Page, outFile string) error {
-	defer log.SetIndentLevel(log.IndentLevel()) // reset indent level after return
-
-	log.Printf("Start packaging in CBZ format to %s", outFile)
+func SaveAsCBZ(pages []Page, outFile string, logger log.Logger) error {
+	logger = logger.Indent("> Package > CBZ ")
+	logger.Info("Start packaging", "file", outFile)
 
 	zipFile, err := os.Create(outFile)
 	if err != nil {
@@ -32,10 +31,8 @@ func SaveAsCBZ(pages []Page, outFile string) error {
 	defer w.Close()
 
 	pageCount := len(pages)
-	log.Indent()
 	for i, page := range pages {
-		log.Printf("Packaging page....(%d/%d)", i+1, pageCount)
-		log.Indent()
+		logger.Infof("Packaging page....(%d/%d)", i+1, pageCount)
 
 		filenameFmt := fmt.Sprintf("%%0%dd-%%s", util.DigitCount(pageCount))
 		outFileName := fmt.Sprintf(filenameFmt, i+1, filepath.Base(page.Filepath))
@@ -43,10 +40,7 @@ func SaveAsCBZ(pages []Page, outFile string) error {
 		if err != nil {
 			return fmt.Errorf("copying page file to the output file: %w", err)
 		}
-
-		log.Unindent()
 	}
-	log.Unindent()
-	log.Printf("Done packaging.")
+	logger.Info("Done packaging")
 	return nil
 }

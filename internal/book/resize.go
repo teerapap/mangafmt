@@ -14,14 +14,15 @@ import (
 	"github.com/teerapap/mangafmt/internal/log"
 )
 
-func (p *Page) ResizeToFit(screen Size, keepOrientation bool) error {
+func (p *Page) ResizeToFit(screen Size, keepOrientation bool, logger log.Logger) error {
+	logger = logger.Indent("> Resize ")
 	pageSize := p.Size()
 	pgOrient := pageSize.Orientation()
 	scrOrient := screen.Orientation()
 	if pgOrient != Square && pgOrient != scrOrient && !keepOrientation {
 		// rotate counter-clockwise
-		log.Printf("[Resize] Rotating page because page orientation %s (%s) does not match screen orientation (%s)", pageSize, pgOrient, scrOrient)
-		p.img = imgutil.Rotate(p.img, 270)
+		logger.Info("Rotating page because page orientation does not match screen orientation -", "page_size", pageSize, "page_orientation", pgOrient, "screen_orientation", scrOrient)
+		p.img = imgutil.Rotate(p.img, 270, logger)
 
 		pageSize = p.Size()
 		//lint:ignore SA4006,SA4017 for correctness
@@ -29,13 +30,13 @@ func (p *Page) ResizeToFit(screen Size, keepOrientation bool) error {
 	}
 
 	if pageSize.CanFitIn(screen) {
-		log.Printf("[Resize] Page size %s can fit in screen size %s - skip resizing", pageSize, screen)
+		logger.Info("Skip resizing becasue page size can fit in screen size -", "page_size", pageSize, "screen_size", screen)
 		return nil
 	}
 	fittedSize := pageSize.AspectFitIn(screen, false)
 
-	log.Printf("[Resize] Resizing page size %s to size %s fit in screen size %s", pageSize, fittedSize, screen)
-	p.img = imgutil.Resize(p.img, image.Pt(int(fittedSize.Width), int(fittedSize.Height)))
+	logger.Info("Resizing page size to fit in screen size", "page_size", pageSize, "fitted_size", fittedSize, "screen_size", screen)
+	p.img = imgutil.Resize(p.img, image.Pt(int(fittedSize.Width), int(fittedSize.Height)), logger)
 
 	return nil
 }

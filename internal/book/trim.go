@@ -20,7 +20,8 @@ type TrimConfig struct {
 	Margin   int
 }
 
-func (p *Page) Trim(cfg TrimConfig, fuzzP float64) error {
+func (p *Page) Trim(cfg TrimConfig, fuzzP float64, logger log.Logger) error {
+	logger = logger.Indent("> Trim   ")
 	if !cfg.Enabled {
 		return nil
 	}
@@ -28,7 +29,7 @@ func (p *Page) Trim(cfg TrimConfig, fuzzP float64) error {
 	pageRect := p.Rect()
 	minSize := pageRect.size.ScaleBy(cfg.MinSizeP)
 
-	tr, err := imgutil.TrimRect(p.img, fuzzP)
+	tr, err := imgutil.TrimRect(p.img, fuzzP, logger)
 	if err != nil {
 		return fmt.Errorf("finding trim box: %w", err)
 	}
@@ -37,10 +38,10 @@ func (p *Page) Trim(cfg TrimConfig, fuzzP float64) error {
 		InsetBy(-cfg.Margin, -cfg.Margin). // add safety margin
 		BoundBy(pageRect)                  // bound by page rect
 
-	log.Verbosef("[Trim] trim box: %s", trimRect)
+	logger.Debug("Trim box -", "rect", trimRect)
 
 	if trimRect == pageRect { // trim box equals page rect
-		log.Printf("[Trim] No trimming needed")
+		logger.Info("No trimming needed")
 		return nil
 	}
 
@@ -54,16 +55,16 @@ func (p *Page) Trim(cfg TrimConfig, fuzzP float64) error {
 			InsetBy(-gapX/2, -gapY/2). // expand each side to minimum size
 			MoveInside(pageRect)       // Move the rect to fit inside page rect frame as much as possible
 
-		log.Printf("[Trim] Page size %s is trimmed by %s but it is smaller than minimum size %s - expanding trim box to minimum %s", pageRect.size, oldRect, minSize, trimRect)
+		logger.Infof("Page size %s is trimmed by %s but it is smaller than minimum size %s - expanding trim box to minimum %s", pageRect.size, oldRect, minSize, trimRect)
 	}
 
 	// Crop to trim rectangle
-	p.img = imgutil.CropImage(p.img, trimRect.ToRectangle())
+	p.img = imgutil.CropImage(p.img, trimRect.ToRectangle(), logger)
 
 	// Print trim info
 	tWidthP := float64(trimRect.size.Width) * 100.0 / float64(pageRect.size.Width)
 	tHeightP := float64(trimRect.size.Height) * 100.0 / float64(pageRect.size.Height)
-	log.Printf("[Trim] Page size %s is trimmed by %s (%.2f%% | %.2f%%)", pageRect.size, trimRect, tWidthP, tHeightP)
+	logger.Infof("Page size %s is trimmed by %s (%.2f%% | %.2f%%)", pageRect.size, trimRect, tWidthP, tHeightP)
 
 	return nil
 }

@@ -16,10 +16,9 @@ import (
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsRaw(pages []Page, outDir string) error {
-	defer log.SetIndentLevel(log.IndentLevel()) // reset indent level after return
-
-	log.Printf("Start packaging in RAW format to %s", outDir)
+func SaveAsRaw(pages []Page, outDir string, logger log.Logger) error {
+	logger = logger.Indent("> Package > RAW ")
+	logger.Info("Start packaging", "dir", outDir)
 
 	err := os.MkdirAll(outDir, 0750)
 	if err != nil {
@@ -27,10 +26,8 @@ func SaveAsRaw(pages []Page, outDir string) error {
 	}
 
 	pageCount := len(pages)
-	log.Indent()
 	for i, page := range pages {
-		log.Printf("Packaging page....(%d/%d)", i+1, pageCount)
-		log.Indent()
+		logger.Infof("Packaging page....(%d/%d)", i+1, pageCount)
 
 		filenameFmt := fmt.Sprintf("%%0%dd-%%s", util.DigitCount(pageCount))
 		outFile := filepath.Join(outDir, fmt.Sprintf(filenameFmt, i+1, filepath.Base(page.Filepath)))
@@ -39,10 +36,7 @@ func SaveAsRaw(pages []Page, outDir string) error {
 		if err != nil {
 			return fmt.Errorf("moving page file from %s to %s: %w", page.Filepath, outFile, err)
 		}
-
-		log.Unindent()
 	}
-	log.Unindent()
-	log.Printf("Done packaging.")
+	logger.Info("Done packaging")
 	return nil
 }

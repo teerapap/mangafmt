@@ -38,7 +38,7 @@ type BookConfig struct {
 	IsRTL   bool
 }
 
-func NewBook(path string, config BookConfig) (*Book, error) {
+func NewBook(path string, config BookConfig, logger log.Logger) (*Book, error) {
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -55,7 +55,7 @@ func NewBook(path string, config BookConfig) (*Book, error) {
 	}
 	title := util.NameWithoutExt(filepath.Base(path))
 
-	extractor, err := FindExtractor()
+	extractor, err := FindExtractor(logger)
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +75,11 @@ func NewBook(path string, config BookConfig) (*Book, error) {
 	}, nil
 }
 
-func (b *Book) LoadPage(pageNo int) (*Page, error) {
+func (b *Book) LoadPage(pageNo int, logger log.Logger) (*Page, error) {
 	// load from cache first
 	cachedPage, found := b.lruCache.Get(pageNo)
 	if found {
-		log.Verbosef("Loading page %d from cache", pageNo)
+		logger.Debug("Loading page from cache -", "page_no", pageNo)
 		return &cachedPage, nil
 	}
 
@@ -93,8 +93,8 @@ func (b *Book) LoadPage(pageNo int) (*Page, error) {
 	defer tmpFile.Close()
 
 	// extract page from pdf file
-	log.Verbosef("Loading page %d using %s", pageNo, b.extractor.Name())
-	if err = b.extractor.Extract(b.Filepath, pageNo, b.Config.Density, filename); err != nil {
+	logger.Info("Loading page -", "page_no", pageNo, "tool", b.extractor.Name())
+	if err = b.extractor.Extract(b.Filepath, pageNo, b.Config.Density, filename, logger); err != nil {
 		return nil, fmt.Errorf("extracting pdf page to tmp file %s: %w", filename, err)
 	}
 
@@ -103,7 +103,7 @@ func (b *Book) LoadPage(pageNo int) (*Page, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading tmp image file %s: %w", filename, err)
 	}
-	log.Verbosef("Loaded page %d at file %s with format=%s, size=%s", pageNo, filename, format, img.Bounds())
+	logger.Debug("Loaded page -", "page_no", pageNo, "file", filename, "format", format, "size", img.Bounds())
 
 	page := Page{
 		img:    img,
@@ -120,18 +120,18 @@ func (b *Book) LoadPage(pageNo int) (*Page, error) {
 type PageExtractor interface {
 	Name() string
 	Detect() error
-	Extract(inputFile string, page int, dpi float64, outputFile string) error
+	Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error
 }
 
-func FindExtractor() (PageExtractor, error) {
+func FindExtractor(logger log.Logger) (PageExtractor, error) {
 	extractors := []PageExtractor{vips{}, imagemagick7{}, imagemagick6{}}
 
 	for _, ext := range extractors {
 		if err := ext.Detect(); err != nil {
-			log.Verbosef("Cannot find %s - %s", ext.Name(), err)
+			logger.Debug("Cannot find tool -", "name", ext.Name(), "error", err)
 		} else {
 			// found the extractor
-			log.Verbosef("Found %s installed", ext.Name())
+			logger.Debug("Found tool installed", "name", ext.Name())
 			return ext, nil
 		}
 	}
@@ -155,15 +155,16 @@ func (i imagemagick6) Detect() error {
 	return err
 }
 
-func (i imagemagick6) Extract(inputFile string, page int, dpi float64, outputFile string) error {
+func (i imagemagick6) Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error {
+	logger = logger.Indent("> Load   ")
 	pageFile := fmt.Sprintf("%s[%d]", inputFile, page-1)
 	cmd := exec.Command("convert", "-density", fmt.Sprintf("%0.2f", dpi), "-define", "pdf:use-cropbox=true", "-auto-orient", pageFile, outputFile)
 	out, err := cmd.CombinedOutput()
-	log.Verbosef("%s command: %s", i.Name(), cmd)
+	logger.Debug("Run", "name", i.Name(), "cmd", cmd)
 	if err != nil {
 		return fmt.Errorf("%s: %w", out, err)
 	} else {
-		log.Verbosef("%s command output: %s", i.Name(), out)
+		logger.Debug("Done", "name", i.Name(), "output", cmd)
 	}
 	return nil
 }
@@ -180,15 +181,16 @@ func (i imagemagick7) Detect() error {
 	return err
 }
 
-func (i imagemagick7) Extract(inputFile string, page int, dpi float64, outputFile string) error {
+func (i imagemagick7) Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error {
+	logger = logger.Indent("> Load   ")
 	pageFile := fmt.Sprintf("%s[%d]", inputFile, page-1)
 	cmd := exec.Command("magick", "-density", fmt.Sprintf("%0.2f", dpi), "-define", "pdf:use-cropbox=true", "-auto-orient", pageFile, outputFile)
 	out, err := cmd.CombinedOutput()
-	log.Verbosef("%s command: %s", i.Name(), cmd)
+	logger.Debug("Run", "name", i.Name(), "cmd", cmd)
 	if err != nil {
 		return fmt.Errorf("%s: %w", out, err)
 	} else {
-		log.Verbosef("%s command output: %s", i.Name(), out)
+		logger.Debug("Done", "name", i.Name(), "output", cmd)
 	}
 	return nil
 }
@@ -205,15 +207,16 @@ func (v vips) Detect() error {
 	return err
 }
 
-func (v vips) Extract(inputFile string, page int, dpi float64, outputFile string) error {
+func (v vips) Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error {
+	logger = logger.Indent("> Load   ")
 	pageFile := fmt.Sprintf("%s[page=%d,dpi=%0.2f]", inputFile, page-1, dpi)
 	cmd := exec.Command("vips", "copy", pageFile, outputFile)
 	out, err := cmd.CombinedOutput()
-	log.Verbosef("%s command: %s", v.Name(), cmd)
+	logger.Debug("Run", "name", v.Name(), "cmd", cmd)
 	if err != nil {
 		return fmt.Errorf("%s: %w", out, err)
 	} else {
-		log.Verbosef("%s command output: %s", v.Name(), out)
+		logger.Debug("Done", "name", v.Name(), "output", cmd)
 	}
 	return nil
 }
