@@ -13,11 +13,11 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/teerapap/mangafmt/internal/book/format"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
 	"rsc.io/pdf"
@@ -25,20 +25,24 @@ import (
 
 type Book struct {
 	Filepath  string
-	Title     string
-	Author    string
+	Info      Info
 	PageCount int
-	Config    BookConfig
+	Config    Config
 	lruCache  *lru.Cache[int, Page]
-	extractor PageExtractor
+	extractor PdfPageExtractor
 }
 
-type BookConfig struct {
+type Info struct {
+	Title  string
+	Author string
+}
+
+type Config struct {
 	Density float64
 	IsRTL   bool
 }
 
-func NewBook(path string, config BookConfig, logger log.Logger) (*Book, error) {
+func NewBook(path string, info Info, cfg Config, logger log.Logger) (*Book, error) {
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -53,9 +57,13 @@ func NewBook(path string, config BookConfig, logger log.Logger) (*Book, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading input pdf file: %w", err)
 	}
-	title := util.NameWithoutExt(filepath.Base(path))
+	info.Title = strings.TrimSpace(info.Title)
+	if info.Title == "" {
+		info.Title = util.NameWithoutExt(filepath.Base(path))
+	}
+	info.Author = strings.TrimSpace(info.Author)
 
-	extractor, err := FindExtractor(logger)
+	extractor, err := FindPdfExtractor(logger)
 	if err != nil {
 		return nil, err
 	}
@@ -67,15 +75,15 @@ func NewBook(path string, config BookConfig, logger log.Logger) (*Book, error) {
 
 	return &Book{
 		Filepath:  path,
-		Title:     title,
+		Info:      info,
 		PageCount: r.NumPage(),
-		Config:    config,
+		Config:    cfg,
 		lruCache:  lruCache,
 		extractor: extractor,
 	}, nil
 }
 
-func (b *Book) LoadPage(pageNo int, logger log.Logger) (*Page, error) {
+func (b *Book) LoadPage(pageNo int, workDir string, logger log.Logger) (*Page, error) {
 	// load from cache first
 	cachedPage, found := b.lruCache.Get(pageNo)
 	if found {
@@ -84,7 +92,7 @@ func (b *Book) LoadPage(pageNo int, logger log.Logger) (*Page, error) {
 	}
 
 	// create temp directory
-	tmpFile, err := os.CreateTemp("", "mangafmt-*.jpg")
+	tmpFile, err := os.CreateTemp(workDir, "mangafmt-*.jpg")
 	if err != nil {
 		return nil, fmt.Errorf("create tmp file for input file(%s) at page %d: %w", b.Filepath, pageNo, err)
 	}
@@ -117,106 +125,121 @@ func (b *Book) LoadPage(pageNo int, logger log.Logger) (*Page, error) {
 	return &page, nil
 }
 
-type PageExtractor interface {
-	Name() string
-	Detect() error
-	Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error
+type FormatConfig struct {
+	Spread    SpreadConfig
+	Trim      TrimConfig
+	Resize    ResizeConfig
+	Grayscale GrayscaleConfig
+	WorkDir   string
 }
 
-func FindExtractor(logger log.Logger) (PageExtractor, error) {
-	extractors := []PageExtractor{vips{}, imagemagick7{}, imagemagick6{}}
+func (b *Book) Format(pr PageRange, cfg FormatConfig, logger log.Logger) (*format.Book, error) {
+	// For loop each page
+	partials := pr.PageCount() != b.PageCount
+	if partials {
+		logger.Infof("Start formatting page(s) in range %s. Total %d page(s).", pr, pr.PageCount())
+	} else {
+		logger.Infof("Start formatting. Total %d page(s).", pr.PageCount())
+	}
 
-	for _, ext := range extractors {
-		if err := ext.Detect(); err != nil {
-			logger.Debug("Cannot find tool -", "name", ext.Name(), "error", err)
+	outPages := make([]format.Page, 0, b.PageCount)
+	for pageNo, i := 1, 1; pageNo <= b.PageCount; {
+		if !pr.Contains(pageNo) {
+			pageNo += 1
+			continue
+		}
+		if partials {
+			logger.Infof("Formatting page %d....(%d/%d)", pageNo, i, pr.PageCount())
 		} else {
-			// found the extractor
-			logger.Debug("Found tool installed", "name", ext.Name())
-			return ext, nil
+			logger.Infof("Formatting page....(%d/%d)", pageNo, pr.PageCount())
+		}
+
+		pageLogger := logger.Indent(fmt.Sprintf("> Page[%d] ", pageNo))
+
+		outPage, formatted, err := b.formatPage(pageNo, pr, cfg, pageLogger)
+		if err != nil {
+			return nil, fmt.Errorf("formatting page %d: %w", pageNo, err)
+		}
+		outPages = append(outPages, outPage...)
+		pageNo += formatted
+		i += formatted
+		logger.Debug("Done formatting page -", "next_input_page", pageNo, "next_output_page", len(outPages))
+	}
+	logger.Info("Done formatting book -", "total_input_pages", pr.PageCount(), "total_output_pages", len(outPages))
+
+	return &format.Book{
+		Title:  b.Info.Title,
+		Author: b.Info.Author,
+		IsRTL:  b.Config.IsRTL,
+		Pages:  outPages,
+	}, nil
+}
+
+func (b *Book) formatPage(pageNo int, pr PageRange, cfg FormatConfig, logger log.Logger) ([]format.Page, int, error) {
+	formatted := 0
+	current, err := b.LoadPage(pageNo, cfg.WorkDir, logger)
+	if err != nil {
+		return nil, 0, fmt.Errorf("loading page %d: %w", pageNo, err)
+	}
+	defer current.Destroy()
+
+	formatted += 1
+
+	connected := false
+	var next *Page = nil
+
+	outPages := make([]format.Page, 0, 3)
+
+	// Look ahead next page
+	if pr.Contains(pageNo+1) && cfg.Spread.Enabled { // has next page
+		// Read next page
+		next, err = b.LoadPage(pageNo+1, cfg.WorkDir, logger)
+		if err != nil {
+			return nil, 0, fmt.Errorf("loading next page %d: %w", pageNo+1, err)
+		}
+		defer next.Destroy()
+
+		// Check if the next page can merge with current page
+		left, right := current.LeftRight(next)
+		connected, err = left.IsDoublePageSpread(right, cfg.Spread, logger)
+		if err != nil {
+			return nil, 0, fmt.Errorf("checking if two pages are double-page spread: %w", err)
+		}
+		if connected {
+			// connect two pages
+			spread, err := left.Connect(right, logger)
+			if err != nil {
+				return nil, 0, fmt.Errorf("connecting two pages: %w", err)
+			}
+			defer spread.Destroy()
+			formatted += 1
+
+			// format the spread page
+			outPage, err := spread.Format(cfg, cfg.Spread.KeepOrientation, logger)
+			if err != nil {
+				return nil, 0, fmt.Errorf("formatting spread page: %w", err)
+			}
+			outPages = append(outPages, *outPage)
 		}
 	}
 
-	return nil, fmt.Errorf("either ImageMagick or VIPS(libvips) is required to extract page from pdf file")
-}
-
-type imagemagick6 struct {
-}
-
-func (i imagemagick6) Name() string {
-	return "ImageMagick6"
-}
-
-func (i imagemagick6) Detect() error {
-	path, err := exec.LookPath("convert")
-	if strings.Contains(strings.ToLower(path), "system32") {
-		// Windows system convert.exe
-		return fmt.Errorf("ImageMagick6 convert utility is not found but convert.exe is found at %s", path)
+	if !connected || cfg.Spread.KeepOriginal {
+		// format current page
+		outPage, err := current.Format(cfg, false, logger)
+		if err != nil {
+			return nil, 0, fmt.Errorf("formatting current page: %w", err)
+		}
+		outPages = append(outPages, *outPage)
 	}
-	return err
-}
 
-func (i imagemagick6) Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error {
-	logger = logger.Indent("> Load   ")
-	pageFile := fmt.Sprintf("%s[%d]", inputFile, page-1)
-	cmd := exec.Command("convert", "-density", fmt.Sprintf("%0.2f", dpi), "-define", "pdf:use-cropbox=true", "-auto-orient", pageFile, outputFile)
-	out, err := cmd.CombinedOutput()
-	logger.Debug("Run", "name", i.Name(), "cmd", cmd)
-	if err != nil {
-		return fmt.Errorf("%s: %w", out, err)
-	} else {
-		logger.Debug("Done", "name", i.Name(), "output", cmd)
+	if connected && cfg.Spread.KeepOriginal {
+		// format next page
+		outPage, err := next.Format(cfg, false, logger)
+		if err != nil {
+			return nil, 0, fmt.Errorf("formatting original next page: %w", err)
+		}
+		outPages = append(outPages, *outPage)
 	}
-	return nil
-}
 
-type imagemagick7 struct {
-}
-
-func (i imagemagick7) Name() string {
-	return "ImageMagick7"
-}
-
-func (i imagemagick7) Detect() error {
-	_, err := exec.LookPath("magick")
-	return err
-}
-
-func (i imagemagick7) Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error {
-	logger = logger.Indent("> Load   ")
-	pageFile := fmt.Sprintf("%s[%d]", inputFile, page-1)
-	cmd := exec.Command("magick", "-density", fmt.Sprintf("%0.2f", dpi), "-define", "pdf:use-cropbox=true", "-auto-orient", pageFile, outputFile)
-	out, err := cmd.CombinedOutput()
-	logger.Debug("Run", "name", i.Name(), "cmd", cmd)
-	if err != nil {
-		return fmt.Errorf("%s: %w", out, err)
-	} else {
-		logger.Debug("Done", "name", i.Name(), "output", cmd)
-	}
-	return nil
-}
-
-type vips struct {
-}
-
-func (v vips) Name() string {
-	return "VIPS"
-}
-
-func (v vips) Detect() error {
-	_, err := exec.LookPath("vips")
-	return err
-}
-
-func (v vips) Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error {
-	logger = logger.Indent("> Load   ")
-	pageFile := fmt.Sprintf("%s[page=%d,dpi=%0.2f]", inputFile, page-1, dpi)
-	cmd := exec.Command("vips", "copy", pageFile, outputFile)
-	out, err := cmd.CombinedOutput()
-	logger.Debug("Run", "name", v.Name(), "cmd", cmd)
-	if err != nil {
-		return fmt.Errorf("%s: %w", out, err)
-	} else {
-		logger.Debug("Done", "name", v.Name(), "output", cmd)
-	}
-	return nil
+	return outPages, formatted, nil
 }

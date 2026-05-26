@@ -16,7 +16,8 @@ import (
 )
 
 type GrayscaleConfig struct {
-	PageRange  *PageRange
+	Enabled    bool
+	PageRange  PageRange
 	ColorDepth uint
 }
 
@@ -39,7 +40,7 @@ func IsSupportedColorDepth(depth uint) error {
 func (p *Page) ConvertToGrayscale(cfg GrayscaleConfig, logger log.Logger) error {
 	logger = logger.Indent("> Gray   ")
 	pr := cfg.PageRange
-	if pr == nil {
+	if !cfg.Enabled {
 		return nil
 	} else if !pr.Contains(p.PageNo) && !(p.OtherPageNo > 0 && pr.Contains(p.OtherPageNo)) {
 		return nil

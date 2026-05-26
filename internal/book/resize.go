@@ -14,8 +14,17 @@ import (
 	"github.com/teerapap/mangafmt/internal/log"
 )
 
-func (p *Page) ResizeToFit(screen Size, keepOrientation bool, logger log.Logger) error {
+type ResizeConfig struct {
+	Enabled    bool
+	ScreenSize Size
+}
+
+func (p *Page) ResizeToFit(cfg ResizeConfig, keepOrientation bool, logger log.Logger) error {
 	logger = logger.Indent("> Resize ")
+	if !cfg.Enabled {
+		return nil
+	}
+	screen := cfg.ScreenSize
 	pageSize := p.Size()
 	pgOrient := pageSize.Orientation()
 	scrOrient := screen.Orientation()

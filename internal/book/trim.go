@@ -16,11 +16,12 @@ import (
 
 type TrimConfig struct {
 	Enabled  bool
+	FuzzP    float64
 	MinSizeP float64
 	Margin   int
 }
 
-func (p *Page) Trim(cfg TrimConfig, fuzzP float64, logger log.Logger) error {
+func (p *Page) Trim(cfg TrimConfig, logger log.Logger) error {
 	logger = logger.Indent("> Trim   ")
 	if !cfg.Enabled {
 		return nil
@@ -29,7 +30,7 @@ func (p *Page) Trim(cfg TrimConfig, fuzzP float64, logger log.Logger) error {
 	pageRect := p.Rect()
 	minSize := pageRect.size.ScaleBy(cfg.MinSizeP)
 
-	tr, err := imgutil.TrimRect(p.img, fuzzP, logger)
+	tr, err := imgutil.TrimRect(p.img, cfg.FuzzP, logger)
 	if err != nil {
 		return fmt.Errorf("finding trim box: %w", err)
 	}

@@ -10,15 +10,25 @@ package format
 import (
 	"fmt"
 	"strings"
-
-	"github.com/teerapap/mangafmt/internal/book"
 )
+
+type Book struct {
+	Title  string
+	Author string
+	IsRTL  bool
+	Pages  []Page
+}
 
 type Page struct {
 	Id        string
 	Filepath  string
 	MediaType string
-	Size      book.Size
+	Size      Size
+}
+
+type Size struct {
+	Width  uint
+	Height uint
 }
 
 type OutputFormat int

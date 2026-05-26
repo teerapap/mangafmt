@@ -17,25 +17,24 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-uuid"
-	"github.com/teerapap/mangafmt/internal/book"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsEPUB(theBook *book.Book, pages []Page, outFile string, logger log.Logger) error {
-	return save("EPUB", theBook, pages, outFile, logger)
+func SaveAsEPUB(book Book, outFile string, logger log.Logger) error {
+	return save("EPUB", book, outFile, logger)
 }
 
-func SaveAsKEPUB(theBook *book.Book, pages []Page, outFile string, logger log.Logger) error {
-	return save("KEPUB", theBook, pages, outFile, logger)
+func SaveAsKEPUB(book Book, outFile string, logger log.Logger) error {
+	return save("KEPUB", book, outFile, logger)
 }
 
-func save(format string, theBook *book.Book, pages []Page, outFile string, logger log.Logger) error {
+func save(format string, book Book, outFile string, logger log.Logger) error {
 	logger = logger.Indent("> Package > " + format + " ")
 	logger.Info("Start packaging", "file", outFile)
 
 	// create epub structure
-	epub, err := createEpub(theBook, pages)
+	epub, err := createEpub(book)
 	if err != nil {
 		return fmt.Errorf("creating epub: %w", err)
 	}
@@ -79,7 +78,7 @@ type EpubPageItem struct {
 	MediaType  string
 }
 
-func createEpub(theBook *book.Book, pages []Page) (EpubBook, error) {
+func createEpub(book Book) (EpubBook, error) {
 	epub := EpubBook{}
 
 	uuidstr, err := uuid.GenerateUUID()
@@ -89,19 +88,19 @@ func createEpub(theBook *book.Book, pages []Page) (EpubBook, error) {
 
 	epub.BookID = fmt.Sprintf("urn:uuid:%s", uuidstr)
 	epub.Language = "en-US"
-	epub.Title = html.EscapeString(theBook.Title)
-	epub.TotalPageCount = len(pages)
-	epub.IsRTL = theBook.Config.IsRTL
+	epub.Title = html.EscapeString(book.Title)
+	epub.TotalPageCount = len(book.Pages)
+	epub.IsRTL = book.IsRTL
 	epub.Contributor = fmt.Sprintf("mangafmt-%s", util.AppVersion)
-	if theBook.Author == "" {
+	if book.Author == "" {
 		epub.Creator = "Anonymous"
 	} else {
-		epub.Creator = theBook.Author
+		epub.Creator = book.Author
 	}
 	epub.ModifiedDatetime = time.Now().Format(time.RFC3339)
 
-	epub.Pages = make([]EpubPage, 0, len(pages))
-	for i, page := range pages {
+	epub.Pages = make([]EpubPage, 0, len(book.Pages))
+	for i, page := range book.Pages {
 		if i == 0 {
 			epub.Cover = EpubPageItem{
 				Id:        "cover",

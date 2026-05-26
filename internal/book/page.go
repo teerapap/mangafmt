@@ -14,6 +14,8 @@ import (
 	"os"
 
 	"github.com/teerapap/mangafmt/internal/log"
+
+	"github.com/teerapap/mangafmt/internal/book/format"
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
@@ -68,19 +70,53 @@ func (p *Page) LeftRight(other *Page) (left *Page, right *Page) {
 	return
 }
 
-func (p Page) WriteFile(dir string, logger log.Logger) (string, string, error) {
+func (p Page) WriteFile(filepath string, logger log.Logger) error {
 	// Save as raw image
 	logger.Info("Writing to filesystem")
-	filename := p.Filepath(dir, ".png")
-	f, err := os.Create(filename)
+	f, err := os.Create(filepath)
 	if err != nil {
-		return "", "", fmt.Errorf("create image file %s: %w", filename, err)
+		return fmt.Errorf("create image file %s: %w", filepath, err)
 	}
 	defer f.Close()
 
 	if err := png.Encode(f, p.img); err != nil {
-		return "", "", fmt.Errorf("writing page to image file %s: %w", filename, err)
+		return fmt.Errorf("writing page to image file %s: %w", filepath, err)
 	}
 
-	return filename, "image/png", nil
+	return nil
+}
+
+func (p *Page) Format(cfg FormatConfig, keepOrientation bool, logger log.Logger) (*format.Page, error) {
+
+	// Trim image with fuzz
+	if err := p.Trim(cfg.Trim, logger); err != nil {
+		return nil, fmt.Errorf("trimming page: %w", err)
+	}
+
+	// Resize page to aspect fit screen
+	if err := p.ResizeToFit(cfg.Resize, keepOrientation, logger); err != nil {
+		return nil, fmt.Errorf("resizing page to fit to screen: %w", err)
+	}
+
+	// Convert to grayscale
+	if err := p.ConvertToGrayscale(cfg.Grayscale, logger); err != nil {
+		return nil, fmt.Errorf("converting page to grayscale: %w", err)
+	}
+
+	// Write to filesystem
+	filepath := p.Filepath(cfg.WorkDir, ".png")
+	err := p.WriteFile(filepath, logger)
+	if err != nil {
+		return nil, fmt.Errorf("writing to filesystem: %w", err)
+	}
+
+	// Create formatted page struct
+	outPage := &format.Page{
+		Id:        p.Filename(""),
+		Filepath:  filepath,
+		MediaType: "image/png",
+		Size:      format.Size(p.Size()),
+	}
+
+	return outPage, nil
 }

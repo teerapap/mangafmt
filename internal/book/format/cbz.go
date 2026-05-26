@@ -17,7 +17,7 @@ import (
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsCBZ(pages []Page, outFile string, logger log.Logger) error {
+func SaveAsCBZ(book Book, outFile string, logger log.Logger) error {
 	logger = logger.Indent("> Package > CBZ ")
 	logger.Info("Start packaging", "file", outFile)
 
@@ -30,8 +30,8 @@ func SaveAsCBZ(pages []Page, outFile string, logger log.Logger) error {
 	w := zip.NewWriter(zipFile)
 	defer w.Close()
 
-	pageCount := len(pages)
-	for i, page := range pages {
+	pageCount := len(book.Pages)
+	for i, page := range book.Pages {
 		logger.Infof("Packaging page....(%d/%d)", i+1, pageCount)
 
 		filenameFmt := fmt.Sprintf("%%0%dd-%%s", util.DigitCount(pageCount))
