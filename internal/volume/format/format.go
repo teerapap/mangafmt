@@ -34,21 +34,21 @@ type Size struct {
 type OutputFormat int
 
 const (
-	RAW = iota
-	CBZ
-	EPUB
-	KEPUB
+	OutputFormatRaw = iota
+	OutputFormatCbz
+	OutputFormatEpub
+	OutputFormatKepub
 )
 
 func (f OutputFormat) String() string {
 	switch f {
-	case RAW:
+	case OutputFormatRaw:
 		return "raw"
-	case CBZ:
+	case OutputFormatCbz:
 		return "cbz"
-	case EPUB:
+	case OutputFormatEpub:
 		return "epub"
-	case KEPUB:
+	case OutputFormatKepub:
 		return "kepub"
 	default:
 		return "unknown"
@@ -57,13 +57,13 @@ func (f OutputFormat) String() string {
 
 func (f OutputFormat) Ext() string {
 	switch f {
-	case RAW:
+	case OutputFormatRaw:
 		return ""
-	case CBZ:
+	case OutputFormatCbz:
 		return "cbz"
-	case EPUB:
+	case OutputFormatEpub:
 		return "epub"
-	case KEPUB:
+	case OutputFormatKepub:
 		return "kepub"
 	default:
 		return ""
@@ -73,13 +73,13 @@ func (f OutputFormat) Ext() string {
 func (f *OutputFormat) Set(val string) error {
 	switch strings.ToLower(val) {
 	case "raw":
-		*f = RAW
+		*f = OutputFormatRaw
 	case "cbz":
-		*f = CBZ
+		*f = OutputFormatCbz
 	case "epub":
-		*f = EPUB
+		*f = OutputFormatEpub
 	case "kepub":
-		*f = KEPUB
+		*f = OutputFormatKepub
 	default:
 		return fmt.Errorf("unknown format: %s", val)
 	}

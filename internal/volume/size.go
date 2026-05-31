@@ -17,16 +17,16 @@ import (
 type Orientation int
 
 const (
-	Portrait = iota
-	Landscape
-	Square
+	OrientationPortrait = iota
+	OrientationLandscape
+	OrientationSquare
 )
 
 func (o Orientation) String() string {
 	switch o {
-	case Portrait:
+	case OrientationPortrait:
 		return "portrait"
-	case Landscape:
+	case OrientationLandscape:
 		return "landscape"
 	default:
 		return "square"
@@ -76,11 +76,11 @@ func (s Size) AspectFitIn(box Size, enlarge bool) Size {
 func (s Size) Orientation() Orientation {
 	switch {
 	case s.Width < s.Height:
-		return Portrait
+		return OrientationPortrait
 	case s.Width > s.Height:
-		return Landscape
+		return OrientationLandscape
 	default:
-		return Square
+		return OrientationSquare
 	}
 }
 

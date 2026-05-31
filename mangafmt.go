@@ -372,13 +372,13 @@ func (j *Job) doProcess() error {
 
 	// Packaging
 	switch j.OutputFormat {
-	case format.RAW:
+	case format.OutputFormatRaw:
 		err = format.SaveAsRaw(*formattedVolume, j.OutputFile, j.Logger)
-	case format.CBZ:
+	case format.OutputFormatCbz:
 		err = format.SaveAsCBZ(*formattedVolume, j.OutputFile, j.Logger)
-	case format.EPUB:
+	case format.OutputFormatEpub:
 		err = format.SaveAsEPUB(*formattedVolume, j.OutputFile, j.Logger)
-	case format.KEPUB:
+	case format.OutputFormatKepub:
 		err = format.SaveAsKEPUB(*formattedVolume, j.OutputFile, j.Logger)
 	}
 	if err != nil {
