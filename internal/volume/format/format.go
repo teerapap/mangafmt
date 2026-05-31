@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-type Book struct {
+type Volume struct {
 	Title  string
 	Author string
 	IsRTL  bool

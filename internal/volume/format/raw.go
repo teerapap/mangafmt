@@ -16,7 +16,7 @@ import (
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsRaw(book Book, outDir string, logger log.Logger) error {
+func SaveAsRaw(volume Volume, outDir string, logger log.Logger) error {
 	logger = logger.Indent("> Package > RAW ")
 	logger.Info("Start packaging", "dir", outDir)
 
@@ -25,8 +25,8 @@ func SaveAsRaw(book Book, outDir string, logger log.Logger) error {
 		return fmt.Errorf("creating output file: %w", err)
 	}
 
-	pageCount := len(book.Pages)
-	for i, page := range book.Pages {
+	pageCount := len(volume.Pages)
+	for i, page := range volume.Pages {
 		logger.Infof("Packaging page....(%d/%d)", i+1, pageCount)
 
 		filenameFmt := fmt.Sprintf("%%0%dd-%%s", util.DigitCount(pageCount))

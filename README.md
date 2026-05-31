@@ -27,7 +27,7 @@
 ```
 ./mangafmt [options] <input_pdf_file>
   -author string
-        Book author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'
+        Manga author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'
   -density float
         Output density (DPI) (default 300)
   -format value
@@ -66,7 +66,7 @@
   -spread-keep-original
         Keep the original left and right page
   -title string
-        Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension
+        Volume title. This affects epub/kepub output. Unspecified or blank means using filename without extension
   -trim
         Enable trim edge (default true)
   -trim-margin int

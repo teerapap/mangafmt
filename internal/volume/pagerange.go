@@ -5,7 +5,7 @@
 // Distributed under terms of the MIT license.
 //
 
-package book
+package volume
 
 import (
 	"fmt"

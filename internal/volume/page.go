@@ -5,7 +5,7 @@
 // Distributed under terms of the MIT license.
 //
 
-package book
+package volume
 
 import (
 	"fmt"
@@ -15,13 +15,13 @@ import (
 
 	"github.com/teerapap/mangafmt/internal/log"
 
-	"github.com/teerapap/mangafmt/internal/book/format"
 	"github.com/teerapap/mangafmt/internal/util"
+	"github.com/teerapap/mangafmt/internal/volume/format"
 )
 
 type Page struct {
-	img  image.Image
-	book *Book
+	img    image.Image
+	volume *Volume
 
 	PageNo      int
 	OtherPageNo int // the other page number that this page connected with
@@ -40,7 +40,7 @@ func (p Page) Size() Size {
 }
 
 func (p Page) Filename(suffix string) string {
-	digits := util.DigitCount(p.book.PageCount)
+	digits := util.DigitCount(p.volume.PageCount)
 	if p.OtherPageNo > 0 { // two-page connected
 		fileFmt := fmt.Sprintf("page-%%0%dd-%%0%dd%%s", digits, digits)
 		return fmt.Sprintf(fileFmt, p.PageNo, p.OtherPageNo, suffix)
@@ -55,7 +55,7 @@ func (p Page) Filepath(dir string, suffix string) string {
 }
 
 func (p *Page) LeftRight(other *Page) (left *Page, right *Page) {
-	isRTL := p.book.Config.IsRTL
+	isRTL := p.volume.Config.IsRTL
 	left = p
 	right = other
 	if isRTL {

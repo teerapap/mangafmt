@@ -1,11 +1,11 @@
 //
-// book.go
+// volume.go
 // Copyright (C) 2024 Teerapap Changwichukarn <teerapap.c@gmail.com>
 //
 // Distributed under terms of the MIT license.
 //
 
-package book
+package volume
 
 import (
 	"fmt"
@@ -17,13 +17,13 @@ import (
 	"strings"
 
 	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/teerapap/mangafmt/internal/book/format"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
+	"github.com/teerapap/mangafmt/internal/volume/format"
 	"rsc.io/pdf"
 )
 
-type Book struct {
+type Volume struct {
 	Filepath  string
 	Info      Info
 	PageCount int
@@ -42,7 +42,7 @@ type Config struct {
 	IsRTL   bool
 }
 
-func NewBook(path string, info Info, cfg Config, logger log.Logger) (*Book, error) {
+func NewVolume(path string, info Info, cfg Config, logger log.Logger) (*Volume, error) {
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -73,7 +73,7 @@ func NewBook(path string, info Info, cfg Config, logger log.Logger) (*Book, erro
 		return nil, fmt.Errorf("reading input pdf file: %w", err)
 	}
 
-	return &Book{
+	return &Volume{
 		Filepath:  path,
 		Info:      info,
 		PageCount: r.NumPage(),
@@ -83,9 +83,9 @@ func NewBook(path string, info Info, cfg Config, logger log.Logger) (*Book, erro
 	}, nil
 }
 
-func (b *Book) LoadPage(pageNo int, workDir string, logger log.Logger) (*Page, error) {
+func (v *Volume) LoadPage(pageNo int, workDir string, logger log.Logger) (*Page, error) {
 	// load from cache first
-	cachedPage, found := b.lruCache.Get(pageNo)
+	cachedPage, found := v.lruCache.Get(pageNo)
 	if found {
 		logger.Debug("Loading page from cache -", "page_no", pageNo)
 		return &cachedPage, nil
@@ -94,15 +94,15 @@ func (b *Book) LoadPage(pageNo int, workDir string, logger log.Logger) (*Page, e
 	// create temp directory
 	tmpFile, err := os.CreateTemp(workDir, "mangafmt-*.jpg")
 	if err != nil {
-		return nil, fmt.Errorf("create tmp file for input file(%s) at page %d: %w", b.Filepath, pageNo, err)
+		return nil, fmt.Errorf("create tmp file for input file(%s) at page %d: %w", v.Filepath, pageNo, err)
 	}
 	filename := tmpFile.Name()
 	defer os.RemoveAll(filename)
 	defer tmpFile.Close()
 
 	// extract page from pdf file
-	logger.Info("Loading page -", "page_no", pageNo, "tool", b.extractor.Name())
-	if err = b.extractor.Extract(b.Filepath, pageNo, b.Config.Density, filename, logger); err != nil {
+	logger.Info("Loading page -", "page_no", pageNo, "tool", v.extractor.Name())
+	if err = v.extractor.Extract(v.Filepath, pageNo, v.Config.Density, filename, logger); err != nil {
 		return nil, fmt.Errorf("extracting pdf page to tmp file %s: %w", filename, err)
 	}
 
@@ -115,12 +115,12 @@ func (b *Book) LoadPage(pageNo int, workDir string, logger log.Logger) (*Page, e
 
 	page := Page{
 		img:    img,
-		book:   b,
+		volume: v,
 		PageNo: pageNo,
 	}
 
 	// save to cache
-	b.lruCache.Add(pageNo, page)
+	v.lruCache.Add(pageNo, page)
 
 	return &page, nil
 }
@@ -133,17 +133,17 @@ type FormatConfig struct {
 	WorkDir   string
 }
 
-func (b *Book) Format(pr PageRange, cfg FormatConfig, logger log.Logger) (*format.Book, error) {
+func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger) (*format.Volume, error) {
 	// For loop each page
-	partials := pr.PageCount() != b.PageCount
+	partials := pr.PageCount() != v.PageCount
 	if partials {
 		logger.Infof("Start formatting page(s) in range %s. Total %d page(s).", pr, pr.PageCount())
 	} else {
 		logger.Infof("Start formatting. Total %d page(s).", pr.PageCount())
 	}
 
-	outPages := make([]format.Page, 0, b.PageCount)
-	for pageNo, i := 1, 1; pageNo <= b.PageCount; {
+	outPages := make([]format.Page, 0, v.PageCount)
+	for pageNo, i := 1, 1; pageNo <= v.PageCount; {
 		if !pr.Contains(pageNo) {
 			pageNo += 1
 			continue
@@ -156,7 +156,7 @@ func (b *Book) Format(pr PageRange, cfg FormatConfig, logger log.Logger) (*forma
 
 		pageLogger := logger.Indent(fmt.Sprintf("> Page[%d] ", pageNo))
 
-		outPage, formatted, err := b.formatPage(pageNo, pr, cfg, pageLogger)
+		outPage, formatted, err := v.formatPage(pageNo, pr, cfg, pageLogger)
 		if err != nil {
 			return nil, fmt.Errorf("formatting page %d: %w", pageNo, err)
 		}
@@ -165,19 +165,19 @@ func (b *Book) Format(pr PageRange, cfg FormatConfig, logger log.Logger) (*forma
 		i += formatted
 		logger.Debug("Done formatting page -", "next_input_page", pageNo, "next_output_page", len(outPages))
 	}
-	logger.Info("Done formatting book -", "total_input_pages", pr.PageCount(), "total_output_pages", len(outPages))
+	logger.Info("Done formatting volume -", "total_input_pages", pr.PageCount(), "total_output_pages", len(outPages))
 
-	return &format.Book{
-		Title:  b.Info.Title,
-		Author: b.Info.Author,
-		IsRTL:  b.Config.IsRTL,
+	return &format.Volume{
+		Title:  v.Info.Title,
+		Author: v.Info.Author,
+		IsRTL:  v.Config.IsRTL,
 		Pages:  outPages,
 	}, nil
 }
 
-func (b *Book) formatPage(pageNo int, pr PageRange, cfg FormatConfig, logger log.Logger) ([]format.Page, int, error) {
+func (v *Volume) formatPage(pageNo int, pr PageRange, cfg FormatConfig, logger log.Logger) ([]format.Page, int, error) {
 	formatted := 0
-	current, err := b.LoadPage(pageNo, cfg.WorkDir, logger)
+	current, err := v.LoadPage(pageNo, cfg.WorkDir, logger)
 	if err != nil {
 		return nil, 0, fmt.Errorf("loading page %d: %w", pageNo, err)
 	}
@@ -193,7 +193,7 @@ func (b *Book) formatPage(pageNo int, pr PageRange, cfg FormatConfig, logger log
 	// Look ahead next page
 	if pr.Contains(pageNo+1) && cfg.Spread.Enabled { // has next page
 		// Read next page
-		next, err = b.LoadPage(pageNo+1, cfg.WorkDir, logger)
+		next, err = v.LoadPage(pageNo+1, cfg.WorkDir, logger)
 		if err != nil {
 			return nil, 0, fmt.Errorf("loading next page %d: %w", pageNo+1, err)
 		}

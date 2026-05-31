@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ncx version="2005-1" xml:lang="en-US" xmlns="http://www.daisy.org/z3986/2005/ncx/">
     <head>
-        <meta name="dtb:uid" content="{{ .BookID }}"/>
+        <meta name="dtb:uid" content="{{ .VolumeID }}"/>
         <meta name="dtb:depth" content="1"/>
         <meta name="dtb:totalPageCount" content="{{ .TotalPageCount }}"/>
         <meta name="dtb:maxPageNumber" content="{{ .TotalPageCount }}"/>

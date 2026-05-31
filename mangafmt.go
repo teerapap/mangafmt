@@ -13,11 +13,11 @@ import (
 	clog "charm.land/log/v2"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/teerapap/mangafmt/internal/book"
-	"github.com/teerapap/mangafmt/internal/book/format"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/spread"
 	"github.com/teerapap/mangafmt/internal/util"
+	"github.com/teerapap/mangafmt/internal/volume"
+	"github.com/teerapap/mangafmt/internal/volume/format"
 )
 
 func helpUsage() {
@@ -59,9 +59,9 @@ func main() {
 	var verbose bool
 	var version bool
 	var selectedPr string
-	var bookInfo book.Info
-	var bookConfig book.Config
-	var formatConfig book.FormatConfig
+	var volumeInfo volume.Info
+	var volumeConfig volume.Config
+	var formatConfig volume.FormatConfig
 	var grayscalePr string
 	var outputFile string
 	var outputFormat format.OutputFormat
@@ -77,11 +77,11 @@ func main() {
 	flag.BoolVar(&version, "version", false, "Show version")
 	flag.StringVar(&formatConfig.WorkDir, "work-dir", "", "Work directory path. Unspecified or blank means using system temp path")
 	flag.StringVar(&selectedPr, "pages", "1-", "Page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end.")
-	flag.StringVar(&bookInfo.Title, "title", "", "Book title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
-	flag.StringVar(&bookInfo.Author, "author", "", "Book author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'")
-	flag.Float64Var(&bookConfig.Density, "density", 300.0, "Output density (DPI)")
-	flag.BoolVar(&bookConfig.IsRTL, "rtl", false, "Right-to-left read direction (ex. Japanese manga)")
-	flag.BoolVar(&bookConfig.IsRTL, "right-to-left", false, "Right-to-left read direction (ex. Japanese manga)")
+	flag.StringVar(&volumeInfo.Title, "title", "", "Volume title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
+	flag.StringVar(&volumeInfo.Author, "author", "", "Volume author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'")
+	flag.Float64Var(&volumeConfig.Density, "density", 300.0, "Output density (DPI)")
+	flag.BoolVar(&volumeConfig.IsRTL, "rtl", false, "Right-to-left read direction (ex. Japanese manga)")
+	flag.BoolVar(&volumeConfig.IsRTL, "right-to-left", false, "Right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&formatConfig.Trim.Enabled, "trim", true, "Enable trim edge")
 	flag.Float64Var(&formatConfig.Trim.FuzzP, "fuzz", 0.1, "Color fuzz (percentage)[0.0-1.0]")
 	flag.Float64Var(&formatConfig.Trim.MinSizeP, "trim-min-size", 0.85, "Minimum size after trimmed (percentage)[0.0-1.0]")
@@ -155,7 +155,7 @@ func main() {
 	formatConfig.Trim.FuzzP = max(min(formatConfig.Trim.FuzzP, 1.0), 0.0)
 	formatConfig.Trim.MinSizeP = max(min(formatConfig.Trim.MinSizeP, 1.0), 0.0)
 	if formatConfig.Grayscale.Enabled {
-		util.Must(book.IsSupportedColorDepth(formatConfig.Grayscale.ColorDepth))("checking grayscale color depth")
+		util.Must(volume.IsSupportedColorDepth(formatConfig.Grayscale.ColorDepth))("checking grayscale color depth")
 	}
 
 	// quick check output files
@@ -182,7 +182,7 @@ func main() {
 
 	if len(inputFiles) > 1 {
 		// multiple input files mode
-		consoleLogger.Infof("Total %d books", len(inputFiles))
+		consoleLogger.Infof("Total %d volumes", len(inputFiles))
 	}
 
 	// create jobs
@@ -194,15 +194,15 @@ func main() {
 	}
 	defer closeJobs()
 	for i := range inputFiles {
-		var bookLogger log.Logger
+		var volumeLogger log.Logger
 		if len(inputFiles) > 1 {
-			bookLogger = consoleLogger.Indent(fmt.Sprintf("> Book[%d] ", i+1))
+			volumeLogger = consoleLogger.Indent(fmt.Sprintf("> Volume[%d] ", i+1))
 		} else {
-			bookLogger = consoleLogger.Indent("> Book ")
+			volumeLogger = consoleLogger.Indent("> Volume ")
 		}
-		job, err := NewJob(inputFiles[i], bookInfo, bookConfig, formatConfig, selectedPr, grayscalePr, outputFiles[i], outputFormat, bookLogger, logToFile)
+		job, err := NewJob(inputFiles[i], volumeInfo, volumeConfig, formatConfig, selectedPr, grayscalePr, outputFiles[i], outputFormat, volumeLogger, logToFile)
 		if err != nil {
-			bookLogger.Error("Error while initializing:", "err", err)
+			volumeLogger.Error("Error while initializing:", "err", err)
 			os.Exit(1)
 			return
 		}
@@ -210,16 +210,16 @@ func main() {
 	}
 
 	if len(jobs) > 1 {
-		// multiple books mode
+		// multiple volumes mode
 
-		consoleLogger.Info("Start processing books", "total", len(jobs), "parallel", parallel)
+		consoleLogger.Info("Start processing volumes", "total", len(jobs), "parallel", parallel)
 		// processing each job
 		wg := &errgroup.Group{}
 		if parallel > 0 {
 			wg.SetLimit(parallel)
 		}
 		for i, job := range jobs {
-			logger := consoleLogger.Indent(fmt.Sprintf("> Book[%d] ", i+1))
+			logger := consoleLogger.Indent(fmt.Sprintf("> Volume[%d] ", i+1))
 			wg.Go(func() error {
 				logger.Info("Starting processing")
 				job.Process()
@@ -233,13 +233,13 @@ func main() {
 
 		success, failure := 0, 0
 		for i, job := range jobs {
-			logger := consoleLogger.Indent(fmt.Sprintf("> Book[%d] ", i+1))
+			logger := consoleLogger.Indent(fmt.Sprintf("> Volume[%d] ", i+1))
 			if job.err != nil {
 				failure = failure + 1
-				logger.Error("FAILURE", "file", job.Book.Filepath, "err", job.err)
+				logger.Error("FAILURE", "file", job.Volume.Filepath, "err", job.err)
 			} else {
 				success = success + 1
-				logger.Info("SUCCESS", "file", job.Book.Filepath)
+				logger.Info("SUCCESS", "file", job.Volume.Filepath)
 			}
 		}
 		consoleLogger.Info("Total Results", "success", success, "failure", failure)
@@ -247,7 +247,7 @@ func main() {
 			os.Exit(1)
 		}
 	} else if len(jobs) == 1 {
-		// single book mode
+		// single volume mode
 		job := jobs[0]
 		job.Process()
 		if job.err != nil {
@@ -257,9 +257,9 @@ func main() {
 }
 
 type Job struct {
-	Book         *book.Book
-	PageRange    book.PageRange
-	FormatConfig book.FormatConfig
+	Volume       *volume.Volume
+	PageRange    volume.PageRange
+	FormatConfig volume.FormatConfig
 	OutputFile   string
 	OutputFormat format.OutputFormat
 	Logger       log.Logger
@@ -269,7 +269,7 @@ type Job struct {
 	err error
 }
 
-func NewJob(inputFile string, info book.Info, cfg book.Config, formatConfig book.FormatConfig, selectedPr string, grayscalePr string, outputFile string, outputFormat format.OutputFormat, logger log.Logger, logToFile bool) (*Job, error) {
+func NewJob(inputFile string, info volume.Info, cfg volume.Config, formatConfig volume.FormatConfig, selectedPr string, grayscalePr string, outputFile string, outputFormat format.OutputFormat, logger log.Logger, logToFile bool) (*Job, error) {
 	var err error
 
 	job := &Job{
@@ -285,10 +285,10 @@ func NewJob(inputFile string, info book.Info, cfg book.Config, formatConfig book
 		bufLogger := log.Wrap(newLogger(job.logsBuffer))
 		printLogHeader(bufLogger)
 
-		job.Logger = log.MultiLogger(logger, bufLogger.Indent("> Book "))
+		job.Logger = log.MultiLogger(logger, bufLogger.Indent("> Volume "))
 	}
 
-	job.Logger.Info("Loading book", "file", inputFile)
+	job.Logger.Info("Loading volume", "file", inputFile)
 	job.Logger.Debug("Output", "file", job.OutputFile)
 
 	// Create job work dir
@@ -299,23 +299,23 @@ func NewJob(inputFile string, info book.Info, cfg book.Config, formatConfig book
 	}
 	job.Logger.Debug("Work directory", "path", job.FormatConfig.WorkDir)
 
-	// Load input book file
-	job.Book, err = book.NewBook(inputFile, info, cfg, job.Logger)
+	// Load input volume file
+	job.Volume, err = volume.NewVolume(inputFile, info, cfg, job.Logger)
 	if err != nil {
-		return nil, fmt.Errorf("loading book: %w", err)
+		return nil, fmt.Errorf("loading volume: %w", err)
 	}
-	job.Logger.Infof("Total Number of Pages: %d", job.Book.PageCount)
+	job.Logger.Infof("Total Number of Pages: %d", job.Volume.PageCount)
 
 	// Parse selected page range argument
-	job.PageRange = *book.NewPageRange()
-	if err := job.PageRange.Parse(selectedPr, job.Book.PageCount); err != nil {
+	job.PageRange = *volume.NewPageRange()
+	if err := job.PageRange.Parse(selectedPr, job.Volume.PageCount); err != nil {
 		return nil, fmt.Errorf("parsing page range(%s): %w", selectedPr, err)
 	}
 
 	// Parse grayscale page range argument
 	if formatConfig.Grayscale.Enabled && strings.ToLower(grayscalePr) != "false" {
-		formatConfig.Grayscale.PageRange = *book.NewPageRange()
-		if err := formatConfig.Grayscale.PageRange.Parse(grayscalePr, job.Book.PageCount); err != nil {
+		formatConfig.Grayscale.PageRange = *volume.NewPageRange()
+		if err := formatConfig.Grayscale.PageRange.Parse(grayscalePr, job.Volume.PageCount); err != nil {
 			return nil, fmt.Errorf("parsing grayscale page range(%s): %w", grayscalePr, err)
 		}
 	}
@@ -358,9 +358,9 @@ func (j *Job) doProcess() error {
 		logFilepath := util.ReplaceExt(j.OutputFile, "log")
 		j.logFile, err = os.OpenFile(logFilepath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
-			return fmt.Errorf("creating book log file: %w", err)
+			return fmt.Errorf("creating volume log file: %w", err)
 		}
-		j.Logger = log.MultiLogger(j.Logger, log.Wrap(newLogger(j.logFile)).Indent("> Book "))
+		j.Logger = log.MultiLogger(j.Logger, log.Wrap(newLogger(j.logFile)).Indent("> Volume "))
 
 		// Write buffer directly to file
 		_, err = j.logsBuffer.WriteTo(j.logFile)
@@ -369,27 +369,27 @@ func (j *Job) doProcess() error {
 		}
 	}
 
-	// Format book
-	formattedBook, err := j.Book.Format(j.PageRange, j.FormatConfig, j.Logger)
+	// Format volume
+	formattedVolume, err := j.Volume.Format(j.PageRange, j.FormatConfig, j.Logger)
 	if err != nil {
-		return fmt.Errorf("formatting book: %w", err)
+		return fmt.Errorf("formatting volume: %w", err)
 	}
 
 	// Packaging
 	switch j.OutputFormat {
 	case format.RAW:
-		err = format.SaveAsRaw(*formattedBook, j.OutputFile, j.Logger)
+		err = format.SaveAsRaw(*formattedVolume, j.OutputFile, j.Logger)
 	case format.CBZ:
-		err = format.SaveAsCBZ(*formattedBook, j.OutputFile, j.Logger)
+		err = format.SaveAsCBZ(*formattedVolume, j.OutputFile, j.Logger)
 	case format.EPUB:
-		err = format.SaveAsEPUB(*formattedBook, j.OutputFile, j.Logger)
+		err = format.SaveAsEPUB(*formattedVolume, j.OutputFile, j.Logger)
 	case format.KEPUB:
-		err = format.SaveAsKEPUB(*formattedBook, j.OutputFile, j.Logger)
+		err = format.SaveAsKEPUB(*formattedVolume, j.OutputFile, j.Logger)
 	}
 	if err != nil {
 		return fmt.Errorf("saving in %s format: %w", j.OutputFormat, err)
 	}
-	j.Logger.Infof("Total Input %d page(s). Total Output %d pages(s).", j.PageRange.PageCount(), len(formattedBook.Pages))
+	j.Logger.Infof("Total Input %d page(s). Total Output %d pages(s).", j.PageRange.PageCount(), len(formattedVolume.Pages))
 
 	return nil
 }

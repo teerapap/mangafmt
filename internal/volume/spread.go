@@ -5,7 +5,7 @@
 // Distributed under terms of the MIT license.
 //
 
-package book
+package volume
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ func (left *Page) Connect(right *Page, logger log.Logger) (*Page, error) {
 
 	newPage := &Page{
 		img:         connected,
-		book:        left.book,
+		volume:      left.volume,
 		PageNo:      min(left.PageNo, right.PageNo),
 		OtherPageNo: max(left.PageNo, right.PageNo),
 	}

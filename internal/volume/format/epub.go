@@ -21,20 +21,20 @@ import (
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsEPUB(book Book, outFile string, logger log.Logger) error {
-	return save("EPUB", book, outFile, logger)
+func SaveAsEPUB(volume Volume, outFile string, logger log.Logger) error {
+	return save("EPUB", volume, outFile, logger)
 }
 
-func SaveAsKEPUB(book Book, outFile string, logger log.Logger) error {
-	return save("KEPUB", book, outFile, logger)
+func SaveAsKEPUB(volume Volume, outFile string, logger log.Logger) error {
+	return save("KEPUB", volume, outFile, logger)
 }
 
-func save(format string, book Book, outFile string, logger log.Logger) error {
+func save(format string, volume Volume, outFile string, logger log.Logger) error {
 	logger = logger.Indent("> Package > " + format + " ")
 	logger.Info("Start packaging", "file", outFile)
 
 	// create epub structure
-	epub, err := createEpub(book)
+	epub, err := createEpub(volume)
 	if err != nil {
 		return fmt.Errorf("creating epub: %w", err)
 	}
@@ -48,8 +48,8 @@ func save(format string, book Book, outFile string, logger log.Logger) error {
 	return nil
 }
 
-type EpubBook struct {
-	BookID           string // urn:uuid:....
+type EpubVolume struct {
+	VolumeID         string // urn:uuid:....
 	Language         string
 	Title            string
 	TotalPageCount   int
@@ -78,29 +78,29 @@ type EpubPageItem struct {
 	MediaType  string
 }
 
-func createEpub(book Book) (EpubBook, error) {
-	epub := EpubBook{}
+func createEpub(volume Volume) (EpubVolume, error) {
+	epub := EpubVolume{}
 
 	uuidstr, err := uuid.GenerateUUID()
 	if err != nil {
-		return EpubBook{}, fmt.Errorf("generating epub uuid: %w", err)
+		return EpubVolume{}, fmt.Errorf("generating epub uuid: %w", err)
 	}
 
-	epub.BookID = fmt.Sprintf("urn:uuid:%s", uuidstr)
+	epub.VolumeID = fmt.Sprintf("urn:uuid:%s", uuidstr)
 	epub.Language = "en-US"
-	epub.Title = html.EscapeString(book.Title)
-	epub.TotalPageCount = len(book.Pages)
-	epub.IsRTL = book.IsRTL
+	epub.Title = html.EscapeString(volume.Title)
+	epub.TotalPageCount = len(volume.Pages)
+	epub.IsRTL = volume.IsRTL
 	epub.Contributor = fmt.Sprintf("mangafmt-%s", util.AppVersion)
-	if book.Author == "" {
+	if volume.Author == "" {
 		epub.Creator = "Anonymous"
 	} else {
-		epub.Creator = book.Author
+		epub.Creator = volume.Author
 	}
 	epub.ModifiedDatetime = time.Now().Format(time.RFC3339)
 
-	epub.Pages = make([]EpubPage, 0, len(book.Pages))
-	for i, page := range book.Pages {
+	epub.Pages = make([]EpubPage, 0, len(volume.Pages))
+	for i, page := range volume.Pages {
 		if i == 0 {
 			epub.Cover = EpubPageItem{
 				Id:        "cover",
@@ -159,7 +159,7 @@ var styleTmpl = util.CreateTemplate("epub/OEBPS/Text/style.css", styleTmplStr)
 var pageTmplStr string
 var pageTmpl = util.CreateTemplate("epub/OEBPS/Text/page.xhtml", pageTmplStr)
 
-func writeEpub(epub EpubBook, outFile string, logger log.Logger) error {
+func writeEpub(epub EpubVolume, outFile string, logger log.Logger) error {
 
 	zipFile, err := os.Create(outFile)
 	if err != nil {
