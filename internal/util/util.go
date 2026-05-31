@@ -16,28 +16,30 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/teerapap/mangafmt/internal/log"
 )
 
 const AppVersion = "v0.6.0"
 
-func Must(err error) func(doing string) {
-	return func(doing string) {
+func Must(err error) func(doing string, logger log.Logger) {
+	return func(doing string, logger log.Logger) {
 		if err != nil {
-			panic(fmt.Errorf("while %s: %w", doing, err))
+			logger.Fatal(fmt.Sprintf("Error while %s:", doing), "err", err)
 		}
 	}
 }
 
-func Must1[T any](obj T, err error) func(doing string) T {
-	return func(doing string) T {
-		Must(err)(doing)
+func Must1[T any](obj T, err error) func(doing string, logger log.Logger) T {
+	return func(doing string, logger log.Logger) T {
+		Must(err)(doing, logger)
 		return obj
 	}
 }
 
-func Must2[T1 any, T2 any](obj1 T1, obj2 T2, err error) func(doing string) (T1, T2) {
-	return func(doing string) (T1, T2) {
-		Must(err)(doing)
+func Must2[T1 any, T2 any](obj1 T1, obj2 T2, err error) func(doing string, logger log.Logger) (T1, T2) {
+	return func(doing string, logger log.Logger) (T1, T2) {
+		Must(err)(doing, logger)
 		return obj1, obj2
 	}
 }

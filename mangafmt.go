@@ -31,14 +31,6 @@ func showVersion() {
 
 // Helper functions
 
-func handlePanic(logger log.Logger) {
-	if r := recover(); r != nil {
-		// exit gracefully if not verbose
-		logger.Error("Panic", "err", r)
-		os.Exit(2)
-	}
-}
-
 func newLogger(w io.Writer) *clog.Logger {
 	return clog.NewWithOptions(w, clog.Options{
 		Level:           clog.GetLevel(),
@@ -46,10 +38,14 @@ func newLogger(w io.Writer) *clog.Logger {
 	})
 }
 
-func printLogHeader(logger log.Logger) {
+func printLogHeader(logger log.Logger) error {
 	logger.Debug("mangafmt", "ver", util.AppVersion, "args", os.Args)
-	cwd := util.Must1(os.Getwd())("getting current directory")
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting current directory: %w", err)
+	}
 	logger.Debug("current directory", "dir", cwd)
+	return nil
 }
 
 func main() {
@@ -122,15 +118,14 @@ func main() {
 		clog.SetLevel(clog.InfoLevel)
 	}
 	consoleLogger := log.Wrap(newLogger(os.Stdout))
-	defer handlePanic(consoleLogger)
-	printLogHeader(consoleLogger)
+	util.Must(printLogHeader(consoleLogger))("printing log header", consoleLogger)
 
 	// Expand input file lists
 	inputFiles := make([]string, 0)
 	for i, arg := range flag.Args() {
 		if strings.Contains(arg, "*") {
 			// Expand the wildcard pattern
-			matches := util.Must1(filepath.Glob(arg))(fmt.Sprintf("expanding input file(%d)", i))
+			matches := util.Must1(filepath.Glob(arg))(fmt.Sprintf("expanding input file(%d)", i), consoleLogger)
 			inputFiles = append(inputFiles, matches...)
 		} else {
 			inputFiles = append(inputFiles, arg)
@@ -142,7 +137,7 @@ func main() {
 	}
 	// quick check input files
 	for i, inputFile := range inputFiles {
-		inputFiles[i] = util.Must1(util.IsReadableFile(inputFile))("checking input file path")
+		inputFiles[i] = util.Must1(util.IsReadableFile(inputFile))("checking input file path", consoleLogger)
 	}
 
 	if convertOnly {
@@ -155,7 +150,7 @@ func main() {
 	formatConfig.Trim.FuzzP = max(min(formatConfig.Trim.FuzzP, 1.0), 0.0)
 	formatConfig.Trim.MinSizeP = max(min(formatConfig.Trim.MinSizeP, 1.0), 0.0)
 	if formatConfig.Grayscale.Enabled {
-		util.Must(volume.IsSupportedColorDepth(formatConfig.Grayscale.ColorDepth))("checking grayscale color depth")
+		util.Must(volume.IsSupportedColorDepth(formatConfig.Grayscale.ColorDepth))("checking grayscale color depth", consoleLogger)
 	}
 
 	// quick check output files
@@ -169,15 +164,15 @@ func main() {
 				outputDir := outputFile
 				outputName := filepath.Base(util.ReplaceExt(inputFile, outputFormat.Ext()))
 				outputFiles[i] = filepath.Join(outputDir, outputName)
-				outputFiles[i] = util.Must1(util.IsWritableFile(outputFiles[i]))("checking output file path")
+				outputFiles[i] = util.Must1(util.IsWritableFile(outputFiles[i]))("checking output file path", consoleLogger)
 			} else {
-				outputFiles[i] = util.Must1(util.IsWritableFile(outputFile))("checking output file path")
+				outputFiles[i] = util.Must1(util.IsWritableFile(outputFile))("checking output file path", consoleLogger)
 			}
 		}
 	}
 
 	// Create work dir
-	util.Must1(util.CreateWorkDir(&formatConfig.WorkDir, true))("creating work directory")
+	util.Must1(util.CreateWorkDir(&formatConfig.WorkDir, true))("creating work directory", consoleLogger)
 	defer os.RemoveAll(formatConfig.WorkDir)
 
 	if len(inputFiles) > 1 {
