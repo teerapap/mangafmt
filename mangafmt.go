@@ -9,9 +9,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	clog "charm.land/log/v2"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/aquilax/truncate"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
 
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/spread"
@@ -49,7 +55,13 @@ func printLogHeader(logger log.Logger) error {
 }
 
 func main() {
+	ec := run()
+	if ec != 0 {
+		os.Exit(ec)
+	}
+}
 
+func run() (ec int) {
 	// Command-line flags
 	var help bool
 	var verbose bool
@@ -64,6 +76,7 @@ func main() {
 	var convertOnly bool
 	var parallel int
 	var logToFile bool
+	var showProgressBar bool
 
 	flag.Usage = helpUsage
 	flag.BoolVar(&help, "help", false, "Show help")
@@ -98,18 +111,19 @@ func main() {
 	flag.StringVar(&outputFile, "output", "", "Output file/directory. Unspecified or blank means using the same file name as input file. For multiple input files, this argument will be output directory")
 	flag.IntVar(&parallel, "parallel", max(1, runtime.NumCPU()/2), "Control the number of concurrent jobs. Zero or negative means unlimit. Default is half number of available CPUs. This is application for multiple input files only")
 	flag.BoolVar(&logToFile, "log-file", false, "Print logs to file in addition to console")
+	flag.BoolVar(&showProgressBar, "progress-bar", false, "Show progress bar instead of logs (experimental)")
 
 	// Parse command-line
 	flag.Parse()
 	if help {
 		flag.Usage()
-		os.Exit(0)
+		return 0
 	} else if version {
 		showVersion()
-		os.Exit(0)
+		return 0
 	} else if flag.Arg(0) == "" {
 		flag.Usage()
-		os.Exit(1)
+		return 1
 	}
 
 	if verbose {
@@ -133,7 +147,7 @@ func main() {
 	}
 	if len(inputFiles) == 0 {
 		flag.Usage()
-		os.Exit(1)
+		return 1
 	}
 	// quick check input files
 	for i, inputFile := range inputFiles {
@@ -180,7 +194,7 @@ func main() {
 		consoleLogger.Infof("Total %d volumes", len(inputFiles))
 	}
 
-	// create jobs
+	// Create jobs from input files
 	jobs := make([]*Job, 0, len(inputFiles))
 	closeJobs := func() {
 		for _, job := range jobs {
@@ -188,6 +202,15 @@ func main() {
 		}
 	}
 	defer closeJobs()
+	var progress *mpb.Progress
+	refreshRate := 500 * time.Millisecond
+	if showProgressBar {
+		progress = mpb.New(
+			mpb.WithAutoRefresh(),
+			mpb.WithRefreshRate(refreshRate),
+		)
+	}
+
 	for i := range inputFiles {
 		var volumeLogger log.Logger
 		if len(inputFiles) > 1 {
@@ -198,33 +221,19 @@ func main() {
 		job, err := NewJob(inputFiles[i], volumeInfo, volumeConfig, formatConfig, selectedPr, grayscalePr, outputFiles[i], outputFormat, volumeLogger, logToFile)
 		if err != nil {
 			volumeLogger.Error("Error while initializing:", "err", err)
-			os.Exit(1)
-			return
+			return 1
 		}
 		jobs = append(jobs, job)
 	}
 
+	// Process each jobs
 	if len(jobs) > 1 {
 		// multiple volumes mode
-
-		consoleLogger.Info("Start processing volumes", "total", len(jobs), "parallel", parallel)
-		// processing each job
-		wg := &errgroup.Group{}
-		if parallel > 0 {
-			wg.SetLimit(parallel)
+		runJobsInParallel(jobs, parallel, consoleLogger, progress)
+		if progress != nil {
+			time.Sleep(refreshRate) // wait for progress bar to render the last time
+			progress.Wait()
 		}
-		for i, job := range jobs {
-			logger := consoleLogger.Indent(fmt.Sprintf("> Volume[%d] ", i+1))
-			wg.Go(func() error {
-				logger.Info("Starting processing")
-				job.Process()
-				logger.Info("Finish processing")
-				return nil
-			})
-		}
-
-		// wait for all jobs to finish
-		wg.Wait()
 
 		success, failure := 0, 0
 		for i, job := range jobs {
@@ -239,29 +248,97 @@ func main() {
 		}
 		consoleLogger.Info("Total Results", "success", success, "failure", failure)
 		if failure > 0 {
-			os.Exit(1)
+			return 1
 		}
 	} else if len(jobs) == 1 {
 		// single volume mode
 		job := jobs[0]
-		job.Process()
+		job.Process(progress)
+		if progress != nil {
+			time.Sleep(refreshRate) // wait for progress bar to render the last time
+			progress.Wait()
+		}
 		if job.err != nil {
-			os.Exit(1)
+			return 1
 		}
 	}
+
+	return 0
+}
+
+func runJobsInParallel(jobs []*Job, parallel int, logger log.Logger, progress *mpb.Progress) {
+	logger.Info("Start processing volumes", "total", len(jobs), "parallel", parallel)
+
+	// processing each job
+	wg := &errgroup.Group{}
+	if parallel > 0 {
+		wg.SetLimit(parallel)
+	}
+	for i, job := range jobs {
+		jobLogger := logger.Indent(fmt.Sprintf("> Volume[%d] ", i+1))
+		if parallel <= 0 || i < parallel {
+			job.decorateProgressBar(progress)
+		}
+		wg.Go(func() error {
+			if progress == nil {
+				jobLogger.Info("Starting processing")
+			}
+			job.Process(progress)
+			if progress == nil {
+				jobLogger.Info("Finish processing")
+			}
+			return nil
+		})
+	}
+
+	// wait for all jobs to finish
+	wg.Wait()
 }
 
 type Job struct {
-	Volume       *volume.Volume
-	PageRange    volume.PageRange
-	FormatConfig volume.FormatConfig
-	OutputFile   string
-	OutputFormat format.OutputFormat
-	Logger       log.Logger
-	logsBuffer   *bytes.Buffer
-	logFile      *os.File
+	Volume        *volume.Volume
+	PageRange     volume.PageRange
+	FormatConfig  volume.FormatConfig
+	OutputFile    string
+	OutputFormat  format.OutputFormat
+	Logger        log.Logger
+	logsBuffer    *bytes.Buffer
+	logFile       *os.File
+	progressTotal int64
+	progressBar   *mpb.Bar
 
-	err error
+	status atomic.Int32 // JobStatus
+	err    error
+}
+
+type JobStatus int32
+
+const (
+	JobStatusWaiting JobStatus = iota
+	JobStatusInitializing
+	JobStatusFormatting
+	JobStatusPackaging
+	JobStatusError
+	JobStatusDone
+)
+
+func (s JobStatus) String() string {
+	switch s {
+	case JobStatusWaiting:
+		return "Waiting"
+	case JobStatusInitializing:
+		return "Initializing"
+	case JobStatusFormatting:
+		return "Formatting"
+	case JobStatusPackaging:
+		return "Packaging"
+	case JobStatusError:
+		return "Error"
+	case JobStatusDone:
+		return "Done"
+	default:
+		return "Unknown"
+	}
 }
 
 func NewJob(inputFile string, info volume.Info, cfg volume.Config, formatConfig volume.FormatConfig, selectedPr string, grayscalePr string, outputFile string, outputFormat format.OutputFormat, logger log.Logger, logToFile bool) (*Job, error) {
@@ -273,6 +350,7 @@ func NewJob(inputFile string, info volume.Info, cfg volume.Config, formatConfig 
 		OutputFormat: outputFormat,
 		Logger:       logger,
 	}
+	job.setStatus(JobStatusWaiting)
 
 	if logToFile {
 		// buffered logs in addition to console logger to flush later when all jobs have been initialized
@@ -315,10 +393,43 @@ func NewJob(inputFile string, info volume.Info, cfg volume.Config, formatConfig 
 		}
 	}
 
-	// revert to original logger
+	// revert to default logger
 	job.Logger = logger
 
 	return job, nil
+}
+
+func (j *Job) Status() JobStatus {
+	return JobStatus(j.status.Load())
+}
+
+func (j *Job) setStatus(status JobStatus) {
+	j.status.Store(int32(status))
+}
+
+func (j *Job) decorateProgressBar(progress *mpb.Progress) {
+	if j.progressBar != nil || progress == nil {
+		return
+	}
+	// turn off default logger
+	j.Logger = log.Wrap(newLogger(io.Discard))
+
+	title := truncate.Truncate(j.Volume.Info.Title, 40, "...", truncate.PositionMiddle)
+	j.progressTotal = 10000
+	j.progressBar = progress.AddBar(j.progressTotal,
+		mpb.PrependDecorators(
+			decor.Name(title, decor.WC{C: decor.DSyncWidthR}),
+		),
+		mpb.AppendDecorators(
+			decor.NewPercentage("%.1f", decor.WC{C: decor.DSyncWidth, W: 6}),
+			decor.Name("|", decor.WC{C: decor.DSyncSpace}),
+			decor.Elapsed(decor.ET_STYLE_GO, decor.WC{C: decor.DSyncSpace}),
+			decor.Name("|", decor.WC{C: decor.DSyncSpace}),
+			decor.Any(func(s decor.Statistics) string {
+				return " " + j.Status().String()
+			}, decor.WC{C: decor.DSyncWidthR, W: 13}),
+		),
+	)
 }
 
 func (j *Job) Close() {
@@ -329,23 +440,40 @@ func (j *Job) Close() {
 	j.logsBuffer = nil
 }
 
-func (j *Job) Process() (err error) {
+func (j *Job) Process(progress *mpb.Progress) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			// Log the panic or handle it as an error
 			j.Logger.Error("Panic while processing:", "err", r)
 			j.err = fmt.Errorf("panic while processing: %v", r)
+			if j.progressBar != nil {
+				j.progressBar.Abort(false)
+			}
+			j.setStatus(JobStatusError)
 			err = j.err
 		}
 	}()
-	j.err = j.doProcess()
+	j.err = j.doProcess(progress)
 	if j.err != nil {
+		j.setStatus(JobStatusError)
+		if j.progressBar != nil {
+			j.progressBar.Abort(false)
+		}
 		j.Logger.Error("Error while processing:", "err", j.err)
+	} else {
+		j.setStatus(JobStatusDone)
+		if j.progressBar != nil {
+			j.progressBar.SetCurrent(j.progressTotal)
+		}
 	}
+
 	return j.err
 }
 
-func (j *Job) doProcess() error {
+func (j *Job) doProcess(progress *mpb.Progress) error {
+	// Setup progress bar if any
+	j.decorateProgressBar(progress)
+
 	// Flush buffered logs to logger
 	if j.logsBuffer != nil {
 		// set logger output to log file only
@@ -365,21 +493,38 @@ func (j *Job) doProcess() error {
 	}
 
 	// Format volume
-	formattedVolume, err := j.Volume.Format(j.PageRange, j.FormatConfig, j.Logger)
+	j.setStatus(JobStatusFormatting)
+	formattedVolume, err := j.Volume.Format(j.PageRange, j.FormatConfig, j.Logger, func(v *volume.Volume, completed float64, lastPageNo int) {
+		if j.progressBar != nil {
+			// 80%
+			total := 0.8
+			comp := min(total, total*completed)
+			j.progressBar.SetCurrent(int64(comp * float64(j.progressTotal)))
+		}
+	})
 	if err != nil {
 		return fmt.Errorf("formatting volume: %w", err)
 	}
 
 	// Packaging
+	j.setStatus(JobStatusPackaging)
+	packagingProgress := func(completed float64) {
+		if j.progressBar != nil {
+			// 20%
+			total := 0.2
+			comp := min(total, total*completed) + 0.8
+			j.progressBar.SetCurrent(int64(comp * float64(j.progressTotal)))
+		}
+	}
 	switch j.OutputFormat {
 	case format.OutputFormatRaw:
-		err = format.SaveAsRaw(*formattedVolume, j.OutputFile, j.Logger)
+		err = format.SaveAsRaw(*formattedVolume, j.OutputFile, j.Logger, packagingProgress)
 	case format.OutputFormatCbz:
-		err = format.SaveAsCBZ(*formattedVolume, j.OutputFile, j.Logger)
+		err = format.SaveAsCBZ(*formattedVolume, j.OutputFile, j.Logger, packagingProgress)
 	case format.OutputFormatEpub:
-		err = format.SaveAsEPUB(*formattedVolume, j.OutputFile, j.Logger)
+		err = format.SaveAsEPUB(*formattedVolume, j.OutputFile, j.Logger, packagingProgress)
 	case format.OutputFormatKepub:
-		err = format.SaveAsKEPUB(*formattedVolume, j.OutputFile, j.Logger)
+		err = format.SaveAsKEPUB(*formattedVolume, j.OutputFile, j.Logger, packagingProgress)
 	}
 	if err != nil {
 		return fmt.Errorf("saving in %s format: %w", j.OutputFormat, err)

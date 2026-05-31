@@ -17,7 +17,7 @@ import (
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsCBZ(volume Volume, outFile string, logger log.Logger) error {
+func SaveAsCBZ(volume Volume, outFile string, logger log.Logger, progress PackagingProgressFunc) error {
 	logger = logger.Indent("> Package > CBZ ")
 	logger.Info("Start packaging", "file", outFile)
 
@@ -31,6 +31,7 @@ func SaveAsCBZ(volume Volume, outFile string, logger log.Logger) error {
 	defer w.Close()
 
 	pageCount := len(volume.Pages)
+	progress(0.0)
 	for i, page := range volume.Pages {
 		logger.Infof("Packaging page....(%d/%d)", i+1, pageCount)
 
@@ -40,6 +41,7 @@ func SaveAsCBZ(volume Volume, outFile string, logger log.Logger) error {
 		if err != nil {
 			return fmt.Errorf("copying page file to the output file: %w", err)
 		}
+		progress(float64(i+1) / float64(pageCount))
 	}
 	logger.Info("Done packaging")
 	return nil

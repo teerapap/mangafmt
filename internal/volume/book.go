@@ -133,7 +133,9 @@ type FormatConfig struct {
 	WorkDir   string
 }
 
-func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger) (*format.Volume, error) {
+type FormattingProgressFunc func(v *Volume, completed float64, lastPageNo int)
+
+func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progress FormattingProgressFunc) (*format.Volume, error) {
 	// For loop each page
 	partials := pr.PageCount() != v.PageCount
 	if partials {
@@ -163,6 +165,7 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger) (*for
 		outPages = append(outPages, outPage...)
 		pageNo += formatted
 		i += formatted
+		progress(v, float64(i-1)/float64(pr.PageCount()), pageNo-1)
 		logger.Debug("Done formatting page -", "next_input_page", pageNo, "next_output_page", len(outPages))
 	}
 	logger.Info("Done formatting volume -", "total_input_pages", pr.PageCount(), "total_output_pages", len(outPages))

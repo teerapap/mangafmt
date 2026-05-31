@@ -21,26 +21,32 @@ import (
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsEPUB(volume Volume, outFile string, logger log.Logger) error {
-	return save("EPUB", volume, outFile, logger)
+func SaveAsEPUB(volume Volume, outFile string, logger log.Logger, progress PackagingProgressFunc) error {
+	return save("EPUB", volume, outFile, logger, progress)
 }
 
-func SaveAsKEPUB(volume Volume, outFile string, logger log.Logger) error {
-	return save("KEPUB", volume, outFile, logger)
+func SaveAsKEPUB(volume Volume, outFile string, logger log.Logger, progress PackagingProgressFunc) error {
+	return save("KEPUB", volume, outFile, logger, progress)
 }
 
-func save(format string, volume Volume, outFile string, logger log.Logger) error {
+func save(format string, volume Volume, outFile string, logger log.Logger, progress PackagingProgressFunc) error {
 	logger = logger.Indent("> Package > " + format + " ")
 	logger.Info("Start packaging", "file", outFile)
 
 	// create epub structure
-	epub, err := createEpub(volume)
+	epub, err := createEpub(volume, func(completed float64) {
+		// 20%
+		progress(completed * 0.2)
+	})
 	if err != nil {
 		return fmt.Errorf("creating epub: %w", err)
 	}
 
 	// write epub stucture to file
-	err = writeEpub(epub, outFile, logger)
+	err = writeEpub(epub, outFile, logger, func(completed float64) {
+		// 80%
+		progress(0.2 + completed*0.8)
+	})
 	if err != nil {
 		return fmt.Errorf("creating epub file: %w", err)
 	}
@@ -78,7 +84,7 @@ type EpubPageItem struct {
 	MediaType  string
 }
 
-func createEpub(volume Volume) (EpubVolume, error) {
+func createEpub(volume Volume, progress PackagingProgressFunc) (EpubVolume, error) {
 	epub := EpubVolume{}
 
 	uuidstr, err := uuid.GenerateUUID()
@@ -99,7 +105,9 @@ func createEpub(volume Volume) (EpubVolume, error) {
 	}
 	epub.ModifiedDatetime = time.Now().Format(time.RFC3339)
 
-	epub.Pages = make([]EpubPage, 0, len(volume.Pages))
+	pageCount := len(volume.Pages)
+	epub.Pages = make([]EpubPage, 0, pageCount)
+	progress(0.0)
 	for i, page := range volume.Pages {
 		if i == 0 {
 			epub.Cover = EpubPageItem{
@@ -127,6 +135,7 @@ func createEpub(volume Volume) (EpubVolume, error) {
 		epubPage.Image.MediaType = page.MediaType
 
 		epub.Pages = append(epub.Pages, epubPage)
+		progress(float64(i+1) / float64(pageCount))
 	}
 	return epub, nil
 }
@@ -159,7 +168,7 @@ var styleTmpl = util.CreateTemplate("epub/OEBPS/Text/style.css", styleTmplStr)
 var pageTmplStr string
 var pageTmpl = util.CreateTemplate("epub/OEBPS/Text/page.xhtml", pageTmplStr)
 
-func writeEpub(epub EpubVolume, outFile string, logger log.Logger) error {
+func writeEpub(epub EpubVolume, outFile string, logger log.Logger, progress PackagingProgressFunc) error {
 
 	zipFile, err := os.Create(outFile)
 	if err != nil {
@@ -170,31 +179,40 @@ func writeEpub(epub EpubVolume, outFile string, logger log.Logger) error {
 	w := zip.NewWriter(zipFile)
 	defer w.Close()
 
+	totalProgress := float64(6 + len(epub.Pages)*2)
+	progress(0)
+
 	logger.Info("Writing metadata files...")
 	err = util.WriteFileToZip(w, "mimetype", mimetypeTmpl, epub)
 	if err != nil {
 		return fmt.Errorf("writing metadata to the output file: %w", err)
 	}
+	progress(1.0 / totalProgress)
 	err = util.WriteFileToZip(w, "META-INF/container.xml", containerTmpl, epub)
 	if err != nil {
 		return fmt.Errorf("writing metadata to the output file: %w", err)
 	}
+	progress(2.0 / totalProgress)
 	err = util.WriteFileToZip(w, "OEBPS/toc.ncx", tocTmpl, epub)
 	if err != nil {
 		return fmt.Errorf("writing metadata to the output file: %w", err)
 	}
+	progress(3.0 / totalProgress)
 	err = util.WriteFileToZip(w, "OEBPS/content.opf", contentTmpl, epub)
 	if err != nil {
 		return fmt.Errorf("writing metadata to the output file: %w", err)
 	}
+	progress(4.0 / totalProgress)
 	err = util.WriteFileToZip(w, "OEBPS/nav.xhtml", navTmpl, epub)
 	if err != nil {
 		return fmt.Errorf("writing metadata to the output file: %w", err)
 	}
+	progress(5.0 / totalProgress)
 	err = util.WriteFileToZip(w, "OEBPS/Text/style.css", styleTmpl, epub)
 	if err != nil {
 		return fmt.Errorf("writing metadata to the output file: %w", err)
 	}
+	progress(6.0 / totalProgress)
 
 	for i, page := range epub.Pages {
 		logger.Infof("Packaging page....(%d/%d)", i+1, epub.TotalPageCount)
@@ -203,10 +221,12 @@ func writeEpub(epub EpubVolume, outFile string, logger log.Logger) error {
 		if err != nil {
 			return fmt.Errorf("writing page(%d) file to the output file: %w", i+1, err)
 		}
+		progress(float64(i*2+1+6) / totalProgress)
 		err = util.CopyFileToZip(w, fmt.Sprintf("OEBPS/%s", page.Image.Url), page.SrcFile)
 		if err != nil {
 			return fmt.Errorf("copying page(%d) image file to the output file: %w", i+1, err)
 		}
+		progress(float64(i*2+2+6) / totalProgress)
 	}
 	logger.Info("Done packaging")
 	return nil

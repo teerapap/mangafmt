@@ -85,3 +85,5 @@ func (f *OutputFormat) Set(val string) error {
 	}
 	return nil
 }
+
+type PackagingProgressFunc func(completed float64)

@@ -16,7 +16,7 @@ import (
 	"github.com/teerapap/mangafmt/internal/util"
 )
 
-func SaveAsRaw(volume Volume, outDir string, logger log.Logger) error {
+func SaveAsRaw(volume Volume, outDir string, logger log.Logger, progress PackagingProgressFunc) error {
 	logger = logger.Indent("> Package > RAW ")
 	logger.Info("Start packaging", "dir", outDir)
 
@@ -26,6 +26,7 @@ func SaveAsRaw(volume Volume, outDir string, logger log.Logger) error {
 	}
 
 	pageCount := len(volume.Pages)
+	progress(0.0)
 	for i, page := range volume.Pages {
 		logger.Infof("Packaging page....(%d/%d)", i+1, pageCount)
 
@@ -36,6 +37,7 @@ func SaveAsRaw(volume Volume, outDir string, logger log.Logger) error {
 		if err != nil {
 			return fmt.Errorf("moving page file from %s to %s: %w", page.Filepath, outFile, err)
 		}
+		progress(float64(i+1) / float64(pageCount))
 	}
 	logger.Info("Done packaging")
 	return nil
