@@ -46,7 +46,7 @@ func (left *Page) IsDoublePageSpread(right *Page, cfg SpreadConfig, logger log.L
 
 func (left *Page) Connect(right *Page, logger log.Logger) (*Page, error) {
 	logger = logger.Indent("> Spread ")
-	connected := imgutil.AppendHorizontally(left.img, right.img, logger)
+	connected := imgutil.ConcatHorizontally(left.img, right.img)
 
 	newPage := &Page{
 		img:         connected,

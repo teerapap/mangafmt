@@ -144,25 +144,49 @@ func CropImage(src image.Image, rect image.Rectangle, logger log.Logger) image.I
 	return dst
 }
 
-func AppendHorizontally(img1 image.Image, img2 image.Image, logger log.Logger) image.Image {
-	r1 := img1.Bounds().Size()
-	r2 := img2.Bounds().Size()
-
-	r := image.Rectangle{
-		Min: image.Pt(0, 0),
-		Max: image.Pt(r1.X+r2.X, max(r1.Y, r2.Y)),
+// ConcatHorizontally returns an image.Image that is the horizontal concatenation of left and right.
+// No pixel data is copied; At() reads are delegated to the underlying images.
+// The returned image has bounds with origin (0, 0); height is max(left.h, right.h),
+// and rows past either source's height read as transparent.
+func ConcatHorizontally(left, right image.Image) image.Image {
+	lb, rb := left.Bounds(), right.Bounds()
+	h := lb.Dy()
+	if rb.Dy() > h {
+		h = rb.Dy()
 	}
+	return &hConcat{
+		left: left, right: right,
+		leftW:    lb.Dx(),
+		leftOff:  lb.Min,
+		rightOff: rb.Min,
+		leftH:    lb.Dy(),
+		rightH:   rb.Dy(),
+		bounds:   image.Rect(0, 0, lb.Dx()+rb.Dx(), h),
+	}
+}
 
-	canvas := NewCanvasSameColor(img1, r, logger)
-	draw.Draw(canvas, image.Rectangle{
-		Min: r.Min,
-		Max: r1,
-	}, img1, img1.Bounds().Min, draw.Src)
-	draw.Draw(canvas, image.Rectangle{
-		Min: r.Min.Add(image.Pt(r1.X, 0)),
-		Max: r2.Add(image.Pt(r1.X, 0)),
-	}, img2, img2.Bounds().Min, draw.Src)
-	return canvas
+type hConcat struct {
+	left, right       image.Image
+	leftOff, rightOff image.Point
+	leftW, leftH      int
+	rightH            int
+	bounds            image.Rectangle
+}
+
+func (h *hConcat) ColorModel() color.Model { return h.left.ColorModel() }
+func (h *hConcat) Bounds() image.Rectangle { return h.bounds }
+
+func (h *hConcat) At(x, y int) color.Color {
+	if x < h.leftW {
+		if y >= h.leftH {
+			return color.Transparent
+		}
+		return h.left.At(h.leftOff.X+x, h.leftOff.Y+y)
+	}
+	if y >= h.rightH {
+		return color.Transparent
+	}
+	return h.right.At(h.rightOff.X+(x-h.leftW), h.rightOff.Y+y)
 }
 
 // detectBackgroundColor estimates the margin color of img as the most frequent
