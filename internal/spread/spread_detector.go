@@ -29,9 +29,8 @@
 //
 //  4. Combine with weights that sum to 1.0, apply penalties, threshold.
 //
-// Color is preserved as the primary representation. A grayscale buffer is
-// derived once for the heuristics that are inherently about brightness
-// (gradient, Sobel) and for the gutter scan.
+// Color and grayscale values are computed on demand via image.Image.At —
+// no pixel buffers are allocated; all accesses go through the original image.
 //
 // Usage
 //
@@ -381,30 +380,27 @@ func (sd *SpreadDetector) IsTwoPageSpread(left, right image.Image) (Result, erro
 		return res, fmt.Errorf("empty image")
 	}
 
-	// Primary buffers are color. Grayscale is derived once.
-	lRGB := toRGB(left)
-	rRGB := toRGB(right)
-	lGray := grayFromRGB(lRGB)
-	rGray := grayFromRGB(rRGB)
+	lv := newView(left)
+	rv := newView(right)
 
 	// Step 1 — quick rule-outs.
-	res.LeftBoxy = sd.isBoxy(lGray)
-	res.RightBoxy = sd.isBoxy(rGray)
-	leftSolid, lMR, lMG, lMB := sd.hasSolidColorMargin(lRGB, true)
-	rightSolid, rMR, rMG, rMB := sd.hasSolidColorMargin(rRGB, false)
+	res.LeftBoxy = sd.isBoxy(lv)
+	res.RightBoxy = sd.isBoxy(rv)
+	leftSolid, lMR, lMG, lMB := sd.hasSolidColorMargin(lv, true)
+	rightSolid, rMR, rMG, rMB := sd.hasSolidColorMargin(rv, false)
 	res.LeftHasMargin = leftSolid
 	res.RightHasMargin = rightSolid
 
 	// Step 2 — find best vertical-shift alignment.
-	res.VerticalShift = sd.findBestVerticalShift(lRGB, rRGB, sd.MaxVerticalShift)
+	res.VerticalShift = sd.findBestVerticalShift(lv, rv, sd.MaxVerticalShift)
 	sh := res.VerticalShift
 
 	// Step 3 — seam heuristics (those marked /shift-aware/ use sh).
-	res.EdgeContinuity = sd.edgeContinuityScore(lRGB, rRGB, sh)        // shift-aware
-	res.HistSimilarity = sd.histogramSimilarityScore(lRGB, rRGB)       // shift-independent
-	res.GradientMatch = sd.gradientMatchScore(lGray, rGray, sh)        // shift-aware
-	res.EdgeAlignment = horizontalEdgeAlignmentScore(lGray, rGray, sh) // shift-aware
-	res.SeamBrightnessCorrelation = sd.seamBrightnessCorrelationScore(lGray, rGray, sh)
+	res.EdgeContinuity = sd.edgeContinuityScore(lv, rv, sh)        // shift-aware
+	res.HistSimilarity = sd.histogramSimilarityScore(lv, rv)       // shift-independent
+	res.GradientMatch = sd.gradientMatchScore(lv, rv, sh)          // shift-aware
+	res.EdgeAlignment = horizontalEdgeAlignmentScore(lv, rv, sh)   // shift-aware
+	res.SeamBrightnessCorrelation = sd.seamBrightnessCorrelationScore(lv, rv, sh)
 
 	// Step 4 — seam informativeness. The similarity heuristics
 	// (EdgeContinuity, HistSimilarity) match trivially when
@@ -413,8 +409,8 @@ func (sd *SpreadDetector) IsTwoPageSpread(left, right image.Image) (Result, erro
 	// side actually has variation to compare. `max` (not `min`) is
 	// deliberate: if one side has content, similarity is naturally low,
 	// so no gating is needed; only the both-uniform case is dangerous.
-	infoL := clamp01(sd.seamStripBrightnessVariance(lGray, true) / sd.SeamInfoVarianceFull)
-	infoR := clamp01(sd.seamStripBrightnessVariance(rGray, false) / sd.SeamInfoVarianceFull)
+	infoL := clamp01(sd.seamStripBrightnessVariance(lv, true) / sd.SeamInfoVarianceFull)
+	infoR := clamp01(sd.seamStripBrightnessVariance(rv, false) / sd.SeamInfoVarianceFull)
 	info := math.Max(infoL, infoR)
 	res.SeamInformativeness = info
 
@@ -426,8 +422,8 @@ func (sd *SpreadDetector) IsTwoPageSpread(left, right image.Image) (Result, erro
 		sd.marginColorsMatch(lMR, lMG, lMB, rMR, rMG, rMB) &&
 		res.EdgeContinuity >= sd.FlatBgEdgeContinuityMin &&
 		info >= sd.InfoFloor && info <= sd.FlatBgInfoMax &&
-		sd.solidColorDepthFraction(lRGB, true, lMR, lMG, lMB) >= sd.FlatBgDepthMin &&
-		sd.solidColorDepthFraction(rRGB, false, rMR, rMG, rMB) >= sd.FlatBgDepthMin
+		sd.solidColorDepthFraction(lv, true, lMR, lMG, lMB) >= sd.FlatBgDepthMin &&
+		sd.solidColorDepthFraction(rv, false, rMR, rMG, rMB) >= sd.FlatBgDepthMin
 
 	// Step 5 — weighted score and penalties.
 	//
@@ -543,54 +539,103 @@ func (sd *SpreadDetector) IsTwoPageSpread(left, right image.Image) (Result, erro
 	return res, nil
 }
 
-// ---------------------------- image buffers ----------------------------- //
+// ----------------------------- image view ------------------------------- //
 
-// rgbImg is a tightly-packed RGB buffer (each channel 0..255 as float64).
-// Layout: row-major, 3 floats per pixel.
-type rgbImg struct {
-	w, h int
-	pix  []float64 // length 3*w*h
+// imgView wraps an image.Image for zero-based logical pixel access without
+// copying pixel data. All reads go through the underlying image.Image.At,
+// or through direct slice access for common concrete types via grayFunc/rgbFunc.
+type imgView struct {
+	img    image.Image
+	ox, oy int // Bounds().Min offset
+	w, h   int // Bounds().Dx(), Dy()
 }
 
-func (im *rgbImg) at(x, y int) (r, g, b float64) {
-	i := 3 * (y*im.w + x)
-	return im.pix[i], im.pix[i+1], im.pix[i+2]
-}
-
-type grayImg struct {
-	w, h int
-	pix  []float64
-}
-
-// toRGB reads an image once into a packed buffer. Goes through
-// image.Image.At which is general but not the fastest path; type-assert to
-// *image.RGBA / *image.NRGBA for a hot loop if needed.
-func toRGB(img image.Image) *rgbImg {
+func newView(img image.Image) imgView {
 	b := img.Bounds()
-	w, h := b.Dx(), b.Dy()
-	im := &rgbImg{w: w, h: h, pix: make([]float64, 3*w*h)}
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			r, g, bl, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
-			i := 3 * (y*w + x)
-			im.pix[i] = float64(r >> 8)
-			im.pix[i+1] = float64(g >> 8)
-			im.pix[i+2] = float64(bl >> 8)
-		}
-	}
-	return im
+	return imgView{img, b.Min.X, b.Min.Y, b.Dx(), b.Dy()}
 }
 
-func grayFromRGB(rgb *rgbImg) *grayImg {
-	n := rgb.w * rgb.h
-	g := &grayImg{w: rgb.w, h: rgb.h, pix: make([]float64, n)}
-	for i := 0; i < n; i++ {
-		r := rgb.pix[3*i]
-		gr := rgb.pix[3*i+1]
-		b := rgb.pix[3*i+2]
-		g.pix[i] = 0.299*r + 0.587*gr + 0.114*b
+// rgb returns 8-bit color channels at logical zero-based (x, y).
+// Use rgbFunc() in hot loops to avoid per-call interface dispatch.
+func (v imgView) rgb(x, y int) (r, g, b float64) {
+	r32, g32, b32, _ := v.img.At(v.ox+x, v.oy+y).RGBA()
+	return float64(r32 >> 8), float64(g32 >> 8), float64(b32 >> 8)
+}
+
+// gray returns luminance at logical zero-based (x, y).
+// Use grayFunc() in hot loops to avoid per-call interface dispatch.
+func (v imgView) gray(x, y int) float64 {
+	r, g, b := v.rgb(x, y)
+	return 0.299*r + 0.587*g + 0.114*b
+}
+
+// grayFunc returns a closure for fast luminance access using direct slice
+// reads for the common concrete image types decoded by image/jpeg and
+// image/png. The type switch executes once; the returned function uses only
+// array indexing in its hot path. Falls back to At() for unknown types.
+func (v imgView) grayFunc() func(x, y int) float64 {
+	ox, oy := v.ox, v.oy
+	switch img := v.img.(type) {
+	case *image.NRGBA:
+		pix, stride := img.Pix, img.Stride
+		return func(x, y int) float64 {
+			i := (oy+y)*stride + (ox+x)*4
+			return 0.299*float64(pix[i]) + 0.587*float64(pix[i+1]) + 0.114*float64(pix[i+2])
+		}
+	case *image.RGBA:
+		pix, stride := img.Pix, img.Stride
+		return func(x, y int) float64 {
+			i := (oy+y)*stride + (ox+x)*4
+			return 0.299*float64(pix[i]) + 0.587*float64(pix[i+1]) + 0.114*float64(pix[i+2])
+		}
+	case *image.YCbCr:
+		// JPEG images: Y channel is luminance directly — no CbCr needed.
+		yPix, yStride := img.Y, img.YStride
+		return func(x, y int) float64 {
+			return float64(yPix[(oy+y)*yStride+(ox+x)])
+		}
+	case *image.Gray:
+		pix, stride := img.Pix, img.Stride
+		return func(x, y int) float64 {
+			return float64(pix[(oy+y)*stride+(ox+x)])
+		}
+	case *image.Gray16:
+		pix, stride := img.Pix, img.Stride
+		return func(x, y int) float64 {
+			i := (oy+y)*stride + (ox+x)*2
+			return float64(uint16(pix[i])<<8|uint16(pix[i+1])) / 256
+		}
+	default:
+		return v.gray
 	}
-	return g
+}
+
+// rgbFunc returns a closure for fast RGB access using direct slice reads
+// for the common concrete image types. Falls back to At() for unknown types.
+func (v imgView) rgbFunc() func(x, y int) (r, g, b float64) {
+	ox, oy := v.ox, v.oy
+	switch img := v.img.(type) {
+	case *image.NRGBA:
+		pix, stride := img.Pix, img.Stride
+		return func(x, y int) (r, g, b float64) {
+			i := (oy+y)*stride + (ox+x)*4
+			return float64(pix[i]), float64(pix[i+1]), float64(pix[i+2])
+		}
+	case *image.RGBA:
+		pix, stride := img.Pix, img.Stride
+		return func(x, y int) (r, g, b float64) {
+			i := (oy+y)*stride + (ox+x)*4
+			return float64(pix[i]), float64(pix[i+1]), float64(pix[i+2])
+		}
+	case *image.Gray:
+		pix, stride := img.Pix, img.Stride
+		return func(x, y int) (r, g, b float64) {
+			lum := float64(pix[(oy+y)*stride+(ox+x)])
+			return lum, lum, lum
+		}
+	default:
+		return v.rgb
+	}
 }
 
 // ---------------------------- pre-filters ------------------------------- //
@@ -620,9 +665,9 @@ func grayFromRGB(rgb *rgbImg) *grayImg {
 //     over only that band's rows. If any band has ≥1 internal vertical
 //     gutter, the page is a grid/mixed layout. Symmetric check for the
 //     vertical-first split.
-func (sd *SpreadDetector) isBoxy(g *grayImg) bool {
-	hGutters := sd.findGutters(g, true, 0, g.w)
-	vGutters := sd.findGutters(g, false, 0, g.h)
+func (sd *SpreadDetector) isBoxy(v imgView) bool {
+	hGutters := sd.findGutters(v, true, 0, v.w)
+	vGutters := sd.findGutters(v, false, 0, v.h)
 
 	if len(hGutters) >= sd.BoxyHGutterMin {
 		return true
@@ -633,11 +678,11 @@ func (sd *SpreadDetector) isBoxy(g *grayImg) bool {
 
 	// Hierarchical: horizontal-first. The most common manga case.
 	if len(hGutters) >= 1 {
-		for _, band := range bandsBetween(g.h, hGutters) {
+		for _, band := range bandsBetween(v.h, hGutters) {
 			if band.extent() < sd.BoxyMinBandExtent {
 				continue
 			}
-			if len(sd.findGutters(g, false, band.start, band.end)) >= 1 {
+			if len(sd.findGutters(v, false, band.start, band.end)) >= 1 {
 				return true
 			}
 		}
@@ -645,11 +690,11 @@ func (sd *SpreadDetector) isBoxy(g *grayImg) bool {
 
 	// Hierarchical: vertical-first (less common but symmetric).
 	if len(vGutters) >= 1 {
-		for _, band := range bandsBetween(g.w, vGutters) {
+		for _, band := range bandsBetween(v.w, vGutters) {
 			if band.extent() < sd.BoxyMinBandExtent {
 				continue
 			}
-			if len(sd.findGutters(g, true, band.start, band.end)) >= 1 {
+			if len(sd.findGutters(v, true, band.start, band.end)) >= 1 {
 				return true
 			}
 		}
@@ -710,12 +755,12 @@ func bandsBetween(n int, gutters []interval) []interval {
 // substantial panel band (see filterFlankedGutters) AND passes the
 // neighbor-contrast filter (the LESS-textured side must be at least
 // GutterNeighborContrastMin × flatter than the band itself).
-func (sd *SpreadDetector) findGutters(g *grayImg, horizontal bool, otherStart, otherEnd int) []interval {
+func (sd *SpreadDetector) findGutters(v imgView, horizontal bool, otherStart, otherEnd int) []interval {
 	var n int
 	if horizontal {
-		n = g.h
+		n = v.h
 	} else {
-		n = g.w
+		n = v.w
 	}
 	m := otherEnd - otherStart
 	if n == 0 || m <= 0 {
@@ -726,19 +771,23 @@ func (sd *SpreadDetector) findGutters(g *grayImg, horizontal bool, otherStart, o
 	// We keep the full array — not just an isGutter boolean — because the
 	// neighbor-contrast filter below needs the variance of rows on either
 	// side of each candidate band.
+	//
+	// grayAt is resolved once via a type switch; the hot loop only sees
+	// direct slice indexing for the common image types (NRGBA, YCbCr, …).
+	grayAt := v.grayFunc()
 	variances := make([]float64, n)
 	mf := float64(m)
 	for a := 0; a < n; a++ {
 		var sum, sumSq float64
 		for b := otherStart; b < otherEnd; b++ {
-			var v float64
+			var val float64
 			if horizontal {
-				v = g.pix[a*g.w+b]
+				val = grayAt(b, a)
 			} else {
-				v = g.pix[b*g.w+a]
+				val = grayAt(a, b)
 			}
-			sum += v
-			sumSq += v * v
+			sum += val
+			sumSq += val * val
 		}
 		mean := sum / mf
 		variances[a] = sumSq/mf - mean*mean
@@ -857,20 +906,21 @@ func meanFloat(xs []float64) float64 {
 // Method: compute the mean color of the seam strip, then count pixels
 // whose every channel sits within MarginChannelTol of that mean. If
 // ≥ MarginFrac qualify, the strip is "solid".
-func (sd *SpreadDetector) hasSolidColorMargin(rgb *rgbImg, rightSide bool) (solid bool, mR, mG, mB float64) {
-	sw := sd.seamWidth(rgb.w)
-	total := sw * rgb.h
+func (sd *SpreadDetector) hasSolidColorMargin(v imgView, rightSide bool) (solid bool, mR, mG, mB float64) {
+	sw := sd.seamWidth(v.w)
+	total := sw * v.h
 	if total == 0 {
 		return false, 0, 0, 0
 	}
+	rgbAt := v.rgbFunc()
 	var sR, sG, sB float64
-	for y := 0; y < rgb.h; y++ {
+	for y := 0; y < v.h; y++ {
 		for d := 0; d < sw; d++ {
 			x := d
 			if rightSide {
-				x = rgb.w - 1 - d
+				x = v.w - 1 - d
 			}
-			r, g, b := rgb.at(x, y)
+			r, g, b := rgbAt(x, y)
 			sR += r
 			sG += g
 			sB += b
@@ -880,13 +930,13 @@ func (sd *SpreadDetector) hasSolidColorMargin(rgb *rgbImg, rightSide bool) (soli
 	mR, mG, mB = sR/nf, sG/nf, sB/nf
 
 	close := 0
-	for y := 0; y < rgb.h; y++ {
+	for y := 0; y < v.h; y++ {
 		for d := 0; d < sw; d++ {
 			x := d
 			if rightSide {
-				x = rgb.w - 1 - d
+				x = v.w - 1 - d
 			}
-			r, g, b := rgb.at(x, y)
+			r, g, b := rgbAt(x, y)
 			if math.Abs(r-mR) < sd.MarginChannelTol &&
 				math.Abs(g-mG) < sd.MarginChannelTol &&
 				math.Abs(b-mB) < sd.MarginChannelTol {
@@ -917,26 +967,27 @@ func (sd *SpreadDetector) marginColorsMatch(lR, lG, lB, rR, rG, rB float64) bool
 // percent of the wide strip matches it, the rest being content. A flat
 // background (a uniform night sky, a black void) keeps the match
 // fraction high all the way across the strip.
-func (sd *SpreadDetector) solidColorDepthFraction(rgb *rgbImg, rightSide bool, mR, mG, mB float64) float64 {
-	depth := int(sd.FlatBgDepthFrac * float64(rgb.w))
+func (sd *SpreadDetector) solidColorDepthFraction(v imgView, rightSide bool, mR, mG, mB float64) float64 {
+	depth := int(sd.FlatBgDepthFrac * float64(v.w))
 	if depth < 1 {
 		depth = 1
 	}
-	if depth > rgb.w {
-		depth = rgb.w
+	if depth > v.w {
+		depth = v.w
 	}
-	total := depth * rgb.h
+	total := depth * v.h
 	if total == 0 {
 		return 0
 	}
+	rgbAt := v.rgbFunc()
 	close := 0
-	for y := 0; y < rgb.h; y++ {
+	for y := 0; y < v.h; y++ {
 		for d := 0; d < depth; d++ {
 			x := d
 			if rightSide {
-				x = rgb.w - 1 - d
+				x = v.w - 1 - d
 			}
-			r, g, b := rgb.at(x, y)
+			r, g, b := rgbAt(x, y)
 			if math.Abs(r-mR) < sd.MarginChannelTol &&
 				math.Abs(g-mG) < sd.MarginChannelTol &&
 				math.Abs(b-mB) < sd.MarginChannelTol {
@@ -952,7 +1003,7 @@ func (sd *SpreadDetector) solidColorDepthFraction(rgb *rgbImg, rightSide bool, m
 // findBestVerticalShift returns the row offset in [-maxShift, +maxShift]
 // that maximises edge continuity. Searches by re-running the edge RMSE
 // score at each candidate shift and picking the best.
-func (sd *SpreadDetector) findBestVerticalShift(left, right *rgbImg, maxShift int) int {
+func (sd *SpreadDetector) findBestVerticalShift(left, right imgView, maxShift int) int {
 	bestShift := 0
 	bestScore := -1.0
 	for s := -maxShift; s <= maxShift; s++ {
@@ -969,13 +1020,15 @@ func (sd *SpreadDetector) findBestVerticalShift(left, right *rgbImg, maxShift in
 
 // edgeContinuityScore: average K columns of color on each side of the seam,
 // per row (with vertical shift), then RMSE in color space.
-func (sd *SpreadDetector) edgeContinuityScore(left, right *rgbImg, shift int) float64 {
+func (sd *SpreadDetector) edgeContinuityScore(left, right imgView, shift int) float64 {
 	n := min(left.h, right.h)
 	if n == 0 {
 		return 0
 	}
 	kL := sd.edgeStrip(left.w)
 	kR := sd.edgeStrip(right.w)
+	lRGB := left.rgbFunc()
+	rRGB := right.rgbFunc()
 	var sumSq float64
 	var count int
 	for y := 0; y < n; y++ {
@@ -987,13 +1040,13 @@ func (sd *SpreadDetector) edgeContinuityScore(left, right *rgbImg, shift int) fl
 
 		var lR, lG, lB, rR, rG, rB float64
 		for d := 0; d < kL; d++ {
-			r, g, b := left.at(left.w-1-d, ly)
+			r, g, b := lRGB(left.w-1-d, ly)
 			lR += r
 			lG += g
 			lB += b
 		}
 		for d := 0; d < kR; d++ {
-			r, g, b := right.at(d, ry)
+			r, g, b := rRGB(d, ry)
 			rR += r
 			rG += g
 			rB += b
@@ -1020,7 +1073,7 @@ func (sd *SpreadDetector) edgeContinuityScore(left, right *rgbImg, shift int) fl
 
 // histogramSimilarityScore: 3D RGB histogram of the seam strip on each
 // page, compared with the Bhattacharyya coefficient. Shift-independent.
-func (sd *SpreadDetector) histogramSimilarityScore(left, right *rgbImg) float64 {
+func (sd *SpreadDetector) histogramSimilarityScore(left, right imgView) float64 {
 	bpc := sd.ColorHistBinsPerChan
 	total := bpc * bpc * bpc
 	lh := make([]float64, total)
@@ -1036,17 +1089,18 @@ func (sd *SpreadDetector) histogramSimilarityScore(left, right *rgbImg) float64 
 	return clamp01(bc)
 }
 
-func (sd *SpreadDetector) accumStripColorHist(rgb *rgbImg, rightSide bool, h []float64) {
-	sw := sd.seamWidth(rgb.w)
+func (sd *SpreadDetector) accumStripColorHist(v imgView, rightSide bool, h []float64) {
+	sw := sd.seamWidth(v.w)
 	bpc := sd.ColorHistBinsPerChan
 	scale := float64(bpc) / 256.0
-	for y := 0; y < rgb.h; y++ {
+	rgbAt := v.rgbFunc()
+	for y := 0; y < v.h; y++ {
 		for d := 0; d < sw; d++ {
 			x := d
 			if rightSide {
-				x = rgb.w - 1 - d
+				x = v.w - 1 - d
 			}
-			r, g, b := rgb.at(x, y)
+			r, g, b := rgbAt(x, y)
 			br := int(r * scale)
 			if br >= bpc {
 				br = bpc - 1
@@ -1066,7 +1120,7 @@ func (sd *SpreadDetector) accumStripColorHist(rgb *rgbImg, rightSide bool, h []f
 
 // gradientMatchScore: Pearson correlation of the vertical derivatives of
 // the per-row mean-brightness signals taken from each seam strip.
-func (sd *SpreadDetector) gradientMatchScore(left, right *grayImg, shift int) float64 {
+func (sd *SpreadDetector) gradientMatchScore(left, right imgView, shift int) float64 {
 	lp, rp := sd.seamBrightnessProfiles(left, right, shift)
 	if len(lp) < 2 {
 		return 0
@@ -1082,7 +1136,7 @@ func (sd *SpreadDetector) gradientMatchScore(left, right *grayImg, shift int) fl
 // derivatives don't correlate (e.g., when subtle registration drift or
 // content jitter scrambles the high-frequency signal but leaves the
 // overall illumination envelope aligned).
-func (sd *SpreadDetector) seamBrightnessCorrelationScore(left, right *grayImg, shift int) float64 {
+func (sd *SpreadDetector) seamBrightnessCorrelationScore(left, right imgView, shift int) float64 {
 	lp, rp := sd.seamBrightnessProfiles(left, right, shift)
 	if len(lp) < 2 {
 		return 0
@@ -1094,13 +1148,15 @@ func (sd *SpreadDetector) seamBrightnessCorrelationScore(left, right *grayImg, s
 // seamBrightnessProfiles returns the per-row mean-brightness signals
 // over the seam strip of each page, sampled proportionally to the
 // shorter image and aligned by the given vertical shift.
-func (sd *SpreadDetector) seamBrightnessProfiles(left, right *grayImg, shift int) (lp, rp []float64) {
+func (sd *SpreadDetector) seamBrightnessProfiles(left, right imgView, shift int) (lp, rp []float64) {
 	n := min(left.h, right.h)
 	if n < 2 {
 		return nil, nil
 	}
 	swL := sd.seamWidth(left.w)
 	swR := sd.seamWidth(right.w)
+	lGray := left.grayFunc()
+	rGray := right.grayFunc()
 	lp = make([]float64, 0, n)
 	rp = make([]float64, 0, n)
 	for y := 0; y < n; y++ {
@@ -1111,10 +1167,10 @@ func (sd *SpreadDetector) seamBrightnessProfiles(left, right *grayImg, shift int
 		}
 		var sl, sr float64
 		for d := 0; d < swL; d++ {
-			sl += left.pix[ly*left.w+(left.w-1-d)]
+			sl += lGray(left.w-1-d, ly)
 		}
 		for d := 0; d < swR; d++ {
-			sr += right.pix[ry*right.w+d]
+			sr += rGray(d, ry)
 		}
 		lp = append(lp, sl/float64(swL))
 		rp = append(rp, sr/float64(swR))
@@ -1126,7 +1182,7 @@ func (sd *SpreadDetector) seamBrightnessProfiles(left, right *grayImg, shift int
 // column of each page, per row; Pearson correlation of the two profiles.
 // Isolates structural transitions (panel borders, outlines, hairlines)
 // from broad tonal differences that RMSE conflates.
-func horizontalEdgeAlignmentScore(left, right *grayImg, shift int) float64 {
+func horizontalEdgeAlignmentScore(left, right imgView, shift int) float64 {
 	n := min(left.h, right.h)
 	if n < 2 {
 		return 0
@@ -1153,21 +1209,22 @@ func horizontalEdgeAlignmentScore(left, right *grayImg, shift int) float64 {
 // replicate handling for out-of-image neighbours. This lets us compute a
 // meaningful response even at the binding column where one side of the
 // 3×3 kernel falls outside the page.
-func sobelMag(g *grayImg, x, y int) float64 {
+func sobelMag(v imgView, x, y int) float64 {
+	grayAt := v.grayFunc()
 	p := func(dx, dy int) float64 {
 		xx := x + dx
 		yy := y + dy
 		if xx < 0 {
 			xx = 0
-		} else if xx >= g.w {
-			xx = g.w - 1
+		} else if xx >= v.w {
+			xx = v.w - 1
 		}
 		if yy < 0 {
 			yy = 0
-		} else if yy >= g.h {
-			yy = g.h - 1
+		} else if yy >= v.h {
+			yy = v.h - 1
 		}
-		return g.pix[yy*g.w+xx]
+		return grayAt(xx, yy)
 	}
 	// Standard Sobel kernels:
 	//   Gx = [-1 0 1; -2 0 2; -1 0 1]
@@ -1204,22 +1261,23 @@ func (sd *SpreadDetector) edgeStrip(w int) int {
 // entire seam strip (seamWidth columns × full height). Near 0 when the
 // strip is a uniform color (margin, flat tone); rises quickly as soon as
 // real content (lines, screentone, gradients) appears in the strip.
-func (sd *SpreadDetector) seamStripBrightnessVariance(g *grayImg, rightSide bool) float64 {
-	sw := sd.seamWidth(g.w)
-	total := sw * g.h
+func (sd *SpreadDetector) seamStripBrightnessVariance(v imgView, rightSide bool) float64 {
+	sw := sd.seamWidth(v.w)
+	total := sw * v.h
 	if total == 0 {
 		return 0
 	}
+	grayAt := v.grayFunc()
 	var sum, sumSq float64
-	for y := 0; y < g.h; y++ {
+	for y := 0; y < v.h; y++ {
 		for d := 0; d < sw; d++ {
 			x := d
 			if rightSide {
-				x = g.w - 1 - d
+				x = v.w - 1 - d
 			}
-			v := g.pix[y*g.w+x]
-			sum += v
-			sumSq += v * v
+			val := grayAt(x, y)
+			sum += val
+			sumSq += val * val
 		}
 	}
 	nf := float64(total)
