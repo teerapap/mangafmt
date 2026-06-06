@@ -24,7 +24,7 @@ type SpreadConfig struct {
 }
 
 func (left *Page) IsDoublePageSpread(right *Page, cfg SpreadConfig, logger log.Logger) (bool, error) {
-	logger = logger.Indent("> Spread ")
+	logger = logger.Indent("> Spread    ")
 	sd := spread.NewSpreadDetector()
 	sd.EdgeStripWidth = cfg.EdgeWidth
 	sd.SpreadThreshold = cfg.Confidence
@@ -45,7 +45,7 @@ func (left *Page) IsDoublePageSpread(right *Page, cfg SpreadConfig, logger log.L
 }
 
 func (left *Page) Connect(right *Page, logger log.Logger) (*Page, error) {
-	logger = logger.Indent("> Spread ")
+	logger = logger.Indent("> Spread    ")
 	connected := imgutil.ConcatHorizontally(left.img, right.img)
 
 	newPage := &Page{

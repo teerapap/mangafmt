@@ -38,11 +38,13 @@ func IsSupportedColorDepth(depth uint) error {
 }
 
 func (p *Page) ConvertToGrayscale(cfg GrayscaleConfig, logger log.Logger) error {
-	logger = logger.Indent("> Gray   ")
+	logger = logger.Indent("> Grayscale ")
 	pr := cfg.PageRange
 	if !cfg.Enabled {
+		logger.Debug("Disabled")
 		return nil
 	} else if !pr.Contains(p.PageNo) && !(p.OtherPageNo > 0 && pr.Contains(p.OtherPageNo)) {
+		logger.Debug("Outside pagerange", "pr", pr, "page", p.PageNo, "other_page", p.OtherPageNo)
 		return nil
 	}
 	srcColorDepth := imgutil.ColorDepth(p.img)

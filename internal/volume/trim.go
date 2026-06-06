@@ -22,8 +22,9 @@ type TrimConfig struct {
 }
 
 func (p *Page) Trim(cfg TrimConfig, logger log.Logger) error {
-	logger = logger.Indent("> Trim   ")
+	logger = logger.Indent("> Trim      ")
 	if !cfg.Enabled {
+		logger.Debug("Disabled")
 		return nil
 	}
 	// Trim image with fuzz

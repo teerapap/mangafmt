@@ -196,7 +196,9 @@ func (v *Volume) formatPage(pageNo int, pr PageRange, cfg FormatConfig, logger l
 	outPages := make([]format.Page, 0, 3)
 
 	// Look ahead next page
-	if pr.Contains(pageNo+1) && cfg.Spread.Enabled { // has next page
+	if !cfg.Spread.Enabled {
+		logger.Indent("> Spread    ").Debug("Disabled")
+	} else if pr.Contains(pageNo + 1) { // has next page
 		// Read next page
 		next, err = v.LoadPage(pageNo+1, cfg.WorkDir, logger)
 		if err != nil {

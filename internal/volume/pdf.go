@@ -47,7 +47,7 @@ func (i imagemagick6) Detect() error {
 }
 
 func (i imagemagick6) Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error {
-	logger = logger.Indent("> Load   ")
+	logger = logger.Indent("> Load      ")
 	pageFile := fmt.Sprintf("%s[%d]", inputFile, page-1)
 	cmd := exec.Command("convert", "-density", fmt.Sprintf("%0.2f", dpi), "-define", "pdf:use-cropbox=true", "-auto-orient", pageFile, outputFile)
 	out, err := cmd.CombinedOutput()
@@ -73,7 +73,7 @@ func (i imagemagick7) Detect() error {
 }
 
 func (i imagemagick7) Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error {
-	logger = logger.Indent("> Load   ")
+	logger = logger.Indent("> Load      ")
 	pageFile := fmt.Sprintf("%s[%d]", inputFile, page-1)
 	cmd := exec.Command("magick", "-density", fmt.Sprintf("%0.2f", dpi), "-define", "pdf:use-cropbox=true", "-auto-orient", pageFile, outputFile)
 	out, err := cmd.CombinedOutput()
@@ -99,7 +99,7 @@ func (v vips) Detect() error {
 }
 
 func (v vips) Extract(inputFile string, page int, dpi float64, outputFile string, logger log.Logger) error {
-	logger = logger.Indent("> Load   ")
+	logger = logger.Indent("> Load      ")
 	pageFile := fmt.Sprintf("%s[page=%d,dpi=%0.2f]", inputFile, page-1, dpi)
 	cmd := exec.Command("vips", "copy", pageFile, outputFile)
 	out, err := cmd.CombinedOutput()

@@ -20,8 +20,9 @@ type ResizeConfig struct {
 }
 
 func (p *Page) ResizeToFit(cfg ResizeConfig, keepOrientation bool, logger log.Logger) error {
-	logger = logger.Indent("> Resize ")
+	logger = logger.Indent("> Resize    ")
 	if !cfg.Enabled {
+		logger.Debug("Disabled")
 		return nil
 	}
 	screen := cfg.ScreenSize

@@ -160,6 +160,8 @@ func run() (ec int) {
 		formatConfig.Trim.Enabled = false
 		formatConfig.Resize.Enabled = false
 		formatConfig.Grayscale.Enabled = false
+	} else {
+		formatConfig.Grayscale.Enabled = true
 	}
 	formatConfig.Trim.FuzzP = max(min(formatConfig.Trim.FuzzP, 1.0), 0.0)
 	formatConfig.Trim.MinSizeP = max(min(formatConfig.Trim.MinSizeP, 1.0), 0.0)
@@ -386,9 +388,9 @@ func NewJob(inputFile string, info volume.Info, cfg volume.Config, formatConfig 
 	}
 
 	// Parse grayscale page range argument
-	if formatConfig.Grayscale.Enabled && strings.ToLower(grayscalePr) != "false" {
-		formatConfig.Grayscale.PageRange = *volume.NewPageRange()
-		if err := formatConfig.Grayscale.PageRange.Parse(grayscalePr, job.Volume.PageCount); err != nil {
+	if job.FormatConfig.Grayscale.Enabled && strings.ToLower(grayscalePr) != "false" {
+		job.FormatConfig.Grayscale.PageRange = *volume.NewPageRange()
+		if err := job.FormatConfig.Grayscale.PageRange.Parse(grayscalePr, job.Volume.PageCount); err != nil {
 			return nil, fmt.Errorf("parsing grayscale page range(%s): %w", grayscalePr, err)
 		}
 	}
