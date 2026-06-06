@@ -136,6 +136,8 @@ type FormatConfig struct {
 type FormattingProgressFunc func(v *Volume, completed float64, lastPageNo int)
 
 func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progress FormattingProgressFunc) (*format.Volume, error) {
+	defer v.lruCache.Purge() // purge the whole cache after done
+
 	// For loop each page
 	partials := pr.PageCount() != v.PageCount
 	if partials {

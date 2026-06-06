@@ -11,44 +11,39 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
-	"math"
 
 	"github.com/ericpauley/go-quantize/quantize"
 	"github.com/teerapap/mangafmt/internal/log"
 	drawx "golang.org/x/image/draw"
-	"golang.org/x/image/math/f64"
 )
 
 func NewCanvasSameColor(src image.Image, r image.Rectangle, logger log.Logger) draw.Image {
-	switch v := src.(type) {
-	case *image.Alpha:
-		return image.NewAlpha(r)
-	case *image.Alpha16:
-		return image.NewAlpha16(r)
-	case *image.CMYK:
-		return image.NewCMYK(r)
-	case *image.Gray:
-		return image.NewGray(r)
-	case *image.Gray16:
-		return image.NewGray16(r)
-	case *image.NRGBA:
-		return image.NewNRGBA(r)
-	case *image.NRGBA64:
-		return image.NewNRGBA64(r)
-	case *image.NYCbCrA:
+	if p, ok := src.(*image.Paletted); ok {
+		return image.NewPaletted(r, p.Palette)
+	}
+	switch src.ColorModel() {
+	case color.RGBAModel:
 		return image.NewRGBA(r)
-	case *image.Paletted:
-		return image.NewPaletted(r, v.Palette)
-	case *image.RGBA:
-		return image.NewRGBA(r)
-	case *image.RGBA64:
+	case color.RGBA64Model:
 		return image.NewRGBA64(r)
-	case image.Rectangle:
+	case color.NRGBAModel:
+		return image.NewNRGBA(r)
+	case color.NRGBA64Model:
+		return image.NewNRGBA64(r)
+	case color.AlphaModel:
+		return image.NewAlpha(r)
+	case color.Alpha16Model:
+		return image.NewAlpha16(r)
+	case color.GrayModel:
+		return image.NewGray(r)
+	case color.Gray16Model:
+		return image.NewGray16(r)
+	case color.CMYKModel:
+		return image.NewCMYK(r)
+	case color.YCbCrModel:
 		return image.NewRGBA(r)
-	case *image.Uniform:
-		return image.NewRGBA(r)
-	case *image.YCbCr:
-		return image.NewRGBA(r)
+	case color.NYCbCrAModel:
+		return image.NewNRGBA(r)
 	default:
 		logger.Warn("unexpected image.Image -", "img", src)
 		return image.NewRGBA(r)
@@ -80,15 +75,23 @@ func TransformToGrayColorModel(img image.Image, logger log.Logger) image.Image {
 		return img
 	}
 	srcDepth := ColorDepth(img)
-	var dst draw.Image
+	var model color.Model
 	if srcDepth == 16 {
-		dst = image.NewGray16(img.Bounds())
+		model = color.Gray16Model
 	} else {
-		dst = image.NewGray(img.Bounds())
+		model = color.GrayModel
 	}
-	draw.Draw(dst, dst.Bounds(), img, img.Bounds().Min, draw.Src)
-	return dst
+	return &grayscale{src: img, model: model}
 }
+
+type grayscale struct {
+	src   image.Image
+	model color.Model
+}
+
+func (g *grayscale) ColorModel() color.Model { return g.model }
+func (g *grayscale) Bounds() image.Rectangle { return g.src.Bounds() }
+func (g *grayscale) At(x, y int) color.Color { return g.model.Convert(g.src.At(x, y)) }
 
 func QuantizeAndDither(img image.Image, numColor int, logger log.Logger) *image.Paletted {
 	q := quantize.MedianCutQuantizer{}
@@ -107,23 +110,52 @@ func Resize(src image.Image, size image.Point, logger log.Logger) image.Image {
 	return canvas
 }
 
-func Rotate(src image.Image, degree float64, logger log.Logger) image.Image {
-	rad := degree * math.Pi / float64(180.0)
+type RotateDegree int32
 
-	// Rotation matrix
-	mm := f64.Aff3{
-		math.Cos(rad), -math.Sin(rad), 0,
-		math.Sin(rad), math.Cos(rad), 0,
+const (
+	RotateDegree90 RotateDegree = iota
+	RotateDegree180
+	RotateDegree270
+)
+
+type rotated struct {
+	src    image.Image
+	bounds image.Rectangle
+	degree RotateDegree
+}
+
+func Rotate(src image.Image, degree RotateDegree, logger log.Logger) image.Image {
+	b := src.Bounds()
+	var bounds image.Rectangle
+	if degree == RotateDegree180 {
+		bounds = image.Rect(0, 0, b.Dx(), b.Dy())
+	} else { // 90 or 270: width and height swap
+		bounds = image.Rect(0, 0, b.Dy(), b.Dx())
 	}
-	size := src.Bounds().Size()
-	width := int((mm[0] * float64(size.X)) + (mm[1] * float64(size.Y)))
-	height := int((mm[3] * float64(size.X)) + (mm[4] * float64(size.Y)))
+	return &rotated{src: src, bounds: bounds, degree: degree}
+}
 
-	canvas := NewCanvasSameColor(src, image.Rect(0, 0, width, height), logger)
+func (r *rotated) ColorModel() color.Model { return r.src.ColorModel() }
+func (r *rotated) Bounds() image.Rectangle { return r.bounds }
 
-	// Rotation Transform
-	drawx.CatmullRom.Transform(canvas, mm, src, src.Bounds(), draw.Src, nil)
-	return canvas
+// At maps an output coordinate back to the single source pixel it came from.
+// For x,y inside Bounds() the mapped source coordinate is always in src's
+// bounds, so no clamping is needed.
+func (r *rotated) At(x, y int) color.Color {
+	b := r.src.Bounds()
+	var sx, sy int
+	switch r.degree {
+	case RotateDegree90: // clockwise
+		sx = b.Min.X + y
+		sy = b.Max.Y - 1 - x
+	case RotateDegree180:
+		sx = b.Max.X - 1 - x
+		sy = b.Max.Y - 1 - y
+	case RotateDegree270: // clockwise (== 90 counter-clockwise)
+		sx = b.Max.X - 1 - y
+		sy = b.Min.Y + x
+	}
+	return r.src.At(sx, sy)
 }
 
 type subImager interface {
@@ -134,15 +166,20 @@ func CropImage(src image.Image, rect image.Rectangle, logger log.Logger) image.I
 	if img, ok := src.(subImager); ok {
 		return img.SubImage(rect)
 	}
-
-	dst := NewCanvasSameColor(src, image.Rectangle{
-		Min: image.Pt(0, 0),
-		Max: rect.Size(),
-	}, logger)
-
-	draw.Draw(dst, dst.Bounds(), src, rect.Min, draw.Src)
-	return dst
+	return &cropped{
+		src:  src,
+		rect: rect.Intersect(src.Bounds()),
+	}
 }
+
+type cropped struct {
+	src  image.Image
+	rect image.Rectangle
+}
+
+func (c *cropped) ColorModel() color.Model { return c.src.ColorModel() }
+func (c *cropped) Bounds() image.Rectangle { return c.rect }
+func (c *cropped) At(x, y int) color.Color { return c.src.At(x, y) }
 
 // ConcatHorizontally returns an image.Image that is the horizontal concatenation of left and right.
 // No pixel data is copied; At() reads are delegated to the underlying images.

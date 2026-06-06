@@ -31,7 +31,7 @@ func (p *Page) ResizeToFit(cfg ResizeConfig, keepOrientation bool, logger log.Lo
 	if pgOrient != OrientationSquare && pgOrient != scrOrient && !keepOrientation {
 		// rotate counter-clockwise
 		logger.Info("Rotating page because page orientation does not match screen orientation -", "page_size", pageSize, "page_orientation", pgOrient, "screen_orientation", scrOrient)
-		p.img = imgutil.Rotate(p.img, 270, logger)
+		p.img = imgutil.Rotate(p.img, imgutil.RotateDegree270, logger)
 
 		pageSize = p.Size()
 		//lint:ignore SA4006,SA4017 for correctness
