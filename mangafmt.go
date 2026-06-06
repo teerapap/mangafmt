@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -109,7 +108,7 @@ func run() (ec int) {
 	flag.BoolVar(&convertOnly, "convert-only", false, "Convert from input to output format only without any modification to the pages at all")
 	flag.Var(&outputFormat, "format", "Output file format. The supported formats\n\t- raw (default)\n\t- cbz\n\t- epub\n\t- kepub")
 	flag.StringVar(&outputFile, "output", "", "Output file/directory. Unspecified or blank means using the same file name as input file. For multiple input files, this argument will be output directory")
-	flag.IntVar(&parallel, "parallel", max(1, runtime.NumCPU()/2), "Control the number of concurrent jobs. Zero or negative means unlimit. Default is half number of available CPUs. This is application for multiple input files only")
+	flag.IntVar(&parallel, "parallel", 2, "Control the number of concurrent jobs. Zero or negative means unlimit. This is application for multiple input files only")
 	flag.BoolVar(&logToFile, "log-file", false, "Print logs to file in addition to console")
 	flag.BoolVar(&showProgressBar, "progress-bar", false, "Show progress bar instead of logs (experimental)")
 
@@ -242,10 +241,10 @@ func run() (ec int) {
 			logger := consoleLogger.Indent(fmt.Sprintf("> Volume[%d] ", i+1))
 			if job.err != nil {
 				failure = failure + 1
-				logger.Error("FAILURE", "file", job.Volume.Filepath, "err", job.err)
+				logger.Error("FAILURE", "input", job.Volume.Filepath, "err", job.err)
 			} else {
 				success = success + 1
-				logger.Info("SUCCESS", "file", job.Volume.Filepath)
+				logger.Info("SUCCESS", "input", job.Volume.Filepath, "output", job.OutputFile)
 			}
 		}
 		consoleLogger.Info("Total Results", "success", success, "failure", failure)
