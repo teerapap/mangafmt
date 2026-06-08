@@ -10,6 +10,7 @@ package util
 import (
 	"archive/zip"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -21,6 +22,63 @@ import (
 )
 
 const AppVersion = "v0.6.0"
+
+func PrintFlagsUsage(output io.Writer) {
+	type flagHelp struct {
+		names []string
+		flag  *flag.Flag
+	}
+
+	helps := make([]flagHelp, 0)
+	flag.VisitAll(func(f *flag.Flag) {
+		name := f.Name
+		if len(name) == 1 {
+			//short flag
+			name = "-" + name
+		} else {
+			name = "--" + name
+		}
+		for i := range helps {
+			if helps[i].flag.Usage == f.Usage {
+				// merge multiple flags with the same usage together
+				helps[i].names = append(helps[i].names, name)
+				return
+			}
+		}
+
+		helps = append(helps, flagHelp{
+			names: []string{name},
+			flag:  f,
+		})
+	})
+
+	// format help usage for each flag
+	for _, help := range helps {
+		fmt.Fprintf(output, "  %s", strings.Join(help.names, ", "))
+
+		tname, _ := flag.UnquoteUsage(help.flag)
+		if tname == "value" {
+			tname = "string"
+		}
+		switch tname {
+		case "":
+			// boolean
+			if help.flag.DefValue != "false" {
+				fmt.Fprintf(output, "=true|false (default: %v)", help.flag.DefValue)
+			}
+		case "string":
+			if help.flag.DefValue != "" {
+				fmt.Fprintf(output, " %s (default: %q)", tname, help.flag.DefValue)
+			} else {
+				fmt.Fprintf(output, " %s", tname)
+			}
+		default:
+			fmt.Fprintf(output, " %s (default: %s)", tname, help.flag.DefValue)
+		}
+		fmt.Fprintf(output, "\n\t%s\n\n", help.flag.Usage)
+
+	}
+}
 
 func Must(err error) func(doing string, logger log.Logger) {
 	return func(doing string, logger log.Logger) {

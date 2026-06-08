@@ -25,11 +25,6 @@ import (
 	"github.com/teerapap/mangafmt/internal/volume/format"
 )
 
-func helpUsage() {
-	fmt.Fprintf(flag.CommandLine.Output(), "%s [options] <input_pdf_file> [input_pdf_file2...]\n", os.Args[0])
-	flag.PrintDefaults()
-}
-
 func showVersion() {
 	fmt.Printf("mangafmt-%s\n", util.AppVersion)
 }
@@ -77,7 +72,12 @@ func run() (ec int) {
 	var logToFile bool
 	var showProgressBar bool
 
-	flag.Usage = helpUsage
+	flag.Usage = func() {
+		output := flag.CommandLine.Output()
+		fmt.Fprintf(output, "%s [options] <input_pdf_file> [input_pdf_file2...]\n\n", os.Args[0])
+		fmt.Fprintf(output, "Options:\n")
+		util.PrintFlagsUsage(output)
+	}
 	flag.BoolVar(&help, "help", false, "Show help")
 	flag.BoolVar(&help, "h", false, "Show help")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose output")
@@ -90,23 +90,23 @@ func run() (ec int) {
 	flag.Float64Var(&volumeConfig.Density, "density", 300.0, "Output density (DPI)")
 	flag.BoolVar(&volumeConfig.IsRTL, "rtl", false, "Right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&volumeConfig.IsRTL, "right-to-left", false, "Right-to-left read direction (ex. Japanese manga)")
-	flag.BoolVar(&formatConfig.Trim.Enabled, "trim", true, "Enable trim edge")
+	flag.BoolVar(&formatConfig.Trim.Enabled, "trim", true, "Enable/disable edge trimming")
 	flag.Float64Var(&formatConfig.Trim.FuzzP, "fuzz", 0.1, "Color fuzz (percentage)[0.0-1.0]")
 	flag.Float64Var(&formatConfig.Trim.MinSizeP, "trim-min-size", 0.85, "Minimum size after trimmed (percentage)[0.0-1.0]")
 	flag.IntVar(&formatConfig.Trim.Margin, "trim-margin", 10, "Safety trim margin (pixel)")
-	flag.BoolVar(&formatConfig.Spread.Enabled, "spread", true, "Enable double-page spread detection and connection")
+	flag.BoolVar(&formatConfig.Spread.Enabled, "spread", true, "Enable/disable double-page spread detection and connection")
 	flag.BoolVar(&formatConfig.Spread.KeepOrientation, "spread-keep-orientation", false, "Keep the page original orientation. Do not rotate to maximize screen area")
 	flag.BoolVar(&formatConfig.Spread.KeepOriginal, "spread-keep-original", false, "Keep the original left and right page")
 	sd := spread.NewSpreadDetector()
 	flag.IntVar(&formatConfig.Spread.EdgeWidth, "spread-edge", sd.EdgeStripWidth, "Edge width for double-page spread detection (pixel)")
 	flag.Float64Var(&formatConfig.Spread.Confidence, "spread-confidence", sd.SpreadThreshold, "Confidence threshold for double-page spread detection. The higher the value, the stricter the criteria become. (percentage)[0.0-1.0]")
-	flag.BoolVar(&formatConfig.Resize.Enabled, "resize", true, "Resize to aspect fit in output screen size")
+	flag.BoolVar(&formatConfig.Resize.Enabled, "resize", true, "Enable/disable resize to aspect fit in output screen size")
 	flag.UintVar(&formatConfig.Resize.ScreenSize.Width, "width", 1264, "Output screen width (pixel)")
 	flag.UintVar(&formatConfig.Resize.ScreenSize.Height, "height", 1680, "Output screen heigt (pixel)")
 	flag.StringVar(&grayscalePr, "grayscale", "2-", "Page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion")
 	flag.UintVar(&formatConfig.Grayscale.ColorDepth, "grayscale-depth", 4, "Grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. No upscale if source image is in lower depth.")
 	flag.BoolVar(&convertOnly, "convert-only", false, "Convert from input to output format only without any modification to the pages at all")
-	flag.Var(&outputFormat, "format", "Output file format. The supported formats\n\t- raw (default)\n\t- cbz\n\t- epub\n\t- kepub")
+	flag.Var(&outputFormat, "format", "Output file format. The supported formats\n\t- raw\n\t- cbz\n\t- epub\n\t- kepub")
 	flag.StringVar(&outputFile, "output", "", "Output file/directory. Unspecified or blank means using the same file name as input file. For multiple input files, this argument will be output directory")
 	flag.IntVar(&parallel, "parallel", 2, "Control the number of concurrent jobs. Zero or negative means unlimit. This is application for multiple input files only")
 	flag.BoolVar(&logToFile, "log-file", false, "Print logs to file in addition to console")
