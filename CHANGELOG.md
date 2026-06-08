@@ -1,5 +1,28 @@
 # CHANGELOG.md
 
+## v0.7.0 (2026-06-09)
+
+Features:
+
+* Support multiple input files.
+* Support `--parallel` flag to control the number of files to format concurrently.
+* Support `--log-file` flag to write log messages to file instead of standard output.
+* Support `--progress-bar` flag to show progress bar.
+* Support `--resize` flag to enable/disable resize step.
+* Support `--convert-only` flag to disable all formatting steps.
+
+Bug Fixes:
+
+* Update golang.org/x/image to fix reported vulnerability.
+
+Improvements:
+
+* Improve logging with structured messages with colors.
+* Reduce memory footprint.
+* Change term from `book` to `volume`.
+* Return wrapped error and log as fatal instead of panic.
+* Improve help usage format
+
 ## v0.6.0 (2026-05-24)
 
 Features:

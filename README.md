@@ -25,63 +25,99 @@
 ### Command Usage
 
 ```
-./mangafmt [options] <input_pdf_file>
-  -author string
-        Manga author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'
-  -density float
-        Output density (DPI) (default 300)
-  -format value
-        Output file format. The supported formats
-                - raw (default)
-                - cbz
-                - epub
-                - kepub
-  -fuzz float
-        Color fuzz (percentage)[0.0-1.0] (default 0.1)
-  -grayscale string
-        Page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion (default "2-")
-  -grayscale-depth uint
-        Grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. No upscale if source image is in lower depth. (default 4)
-  -h    Show help
-  -height uint
-        Output screen heigt (pixel) (default 1680)
-  -help
-        Show help
-  -output string
-        Output file. Unspecified or blank means using the same file name as input file
-  -pages string
-        Page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end. (default "1-")
-  -right-to-left
-        Right-to-left read direction (ex. Japanese manga)
-  -rtl
-        Right-to-left read direction (ex. Japanese manga)
-  -spread
-        Enable double-page spread detection and connection (default true)
-  -spread-confidence float
-        Confidence threshold for double-page spread detection. The higher the value, the stricter the criteria become. (percentage)[0.0-1.0] (default 0.55)
-  -spread-edge uint
-        Edge width for double-page spread detection (pixel) (default 30)
-  -spread-keep-orientation
-        Keep the page original orientation. Do not rotate to maximize screen area
-  -spread-keep-original
-        Keep the original left and right page
-  -title string
-        Volume title. This affects epub/kepub output. Unspecified or blank means using filename without extension
-  -trim
-        Enable trim edge (default true)
-  -trim-margin int
-        Safety trim margin (pixel) (default 10)
-  -trim-min-size float
-        Minimum size after trimmed (percentage)[0.0-1.0] (default 0.85)
-  -v    Verbose output
-  -verbose
-        Verbose output
-  -version
-        Show version
-  -width uint
-        Output screen width (pixel) (default 1264)
-  -work-dir string
-        Work directory path. Unspecified or blank means using system temp path
+mangafmt [options] <input_pdf_file> [input_pdf_file2...]
+
+Options:
+  --author string
+	Volume author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'
+
+  --convert-only
+	Convert from input to output format only without any modification to the pages at all
+
+  --density float (default: 300)
+	Output density (DPI)
+
+  --format string (default: "raw")
+	Output file format. The supported formats
+	- raw
+	- cbz
+	- epub
+	- kepub
+
+  --fuzz float (default: 0.1)
+	Color fuzz (percentage)[0.0-1.0]
+
+  --grayscale string (default: "2-")
+	Page range (Ex. '4-10, 15, 39-') to convert to grayscale. Default is all pages except the first page(cover). 'false' means no grayscale conversion
+
+  --grayscale-depth uint (default: 4)
+	Grayscale color depth in number of bits. Possible values are 1, 2, 4, 8, 16 bits. No upscale if source image is in lower depth.
+
+  -h, --help
+	Show help
+
+  --height uint (default: 1680)
+	Output screen heigt (pixel)
+
+  --log-file
+	Print logs to file in addition to console
+
+  --output string
+	Output file/directory. Unspecified or blank means using the same file name as input file. For multiple input files, this argument will be output directory
+
+  --pages string (default: "1-")
+	Page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end.
+
+  --parallel int (default: 2)
+	Control the number of concurrent jobs. Zero or negative means unlimit. This is application for multiple input files only
+
+  --progress-bar
+	Show progress bar instead of logs (experimental)
+
+  --resize=true|false (default: true)
+	Enable/disable resize to aspect fit in output screen size
+
+  --right-to-left, --rtl
+	Right-to-left read direction (ex. Japanese manga)
+
+  --spread=true|false (default: true)
+	Enable/disable double-page spread detection and connection
+
+  --spread-confidence float (default: 0.55)
+	Confidence threshold for double-page spread detection. The higher the value, the stricter the criteria become. (percentage)[0.0-1.0]
+
+  --spread-edge int (default: 30)
+	Edge width for double-page spread detection (pixel)
+
+  --spread-keep-orientation
+	Keep the page original orientation. Do not rotate to maximize screen area
+
+  --spread-keep-original
+	Keep the original left and right page
+
+  --title string
+	Volume title. This affects epub/kepub output. Unspecified or blank means using filename without extension
+
+  --trim=true|false (default: true)
+	Enable/disable edge trimming
+
+  --trim-margin int (default: 10)
+	Safety trim margin (pixel)
+
+  --trim-min-size float (default: 0.85)
+	Minimum size after trimmed (percentage)[0.0-1.0]
+
+  -v, --verbose
+	Verbose output
+
+  --version
+	Show version
+
+  --width uint (default: 1264)
+	Output screen width (pixel)
+
+  --work-dir string
+	Work directory path. Unspecified or blank means using system temp path
 ```
 
 ## Install
