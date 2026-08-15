@@ -16,6 +16,7 @@
 
 * Input File
   * PDF
+  * EPUB/KEPUB (implemented with the help from Claude Code)
 * Output File
   * EPUB
   * KEPUB
@@ -25,7 +26,7 @@
 ### Command Usage
 
 ```
-mangafmt [options] <input_pdf_file> [input_pdf_file2...]
+mangafmt [options] <input_file> [input_file2...]
 
 Options:
   --author string
@@ -35,7 +36,7 @@ Options:
 	Convert from input to output format only without any modification to the pages at all
 
   --density float (default: 300)
-	Output density (DPI)
+	Output density (DPI). This affects pdf input only
 
   --format string (default: "raw")
 	Output file format. The supported formats
@@ -136,7 +137,7 @@ go install github.com/teerapap/mangafmt@latest
 
 ## Runtime Dependencies
 
-For PDF input, you need to install one of these options.
+For PDF input, you need to install one of these options. Other input formats need none of them.
 
 * [libvips](https://www.libvips.org/) (**Fastest**)
   * For Windows, you need to install the version with `-all` suffix and configure `PATH` environment variable to see `vips.exe` command.
@@ -156,7 +157,6 @@ go build
 
 * Support raw images in a directory input
 * Support CBZ input format
-* Support EPUB/KEPUB input format
 
 ## Notes
 

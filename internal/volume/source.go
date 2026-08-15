@@ -41,7 +41,9 @@ func openInputSource(path string, logger log.Logger) (InputSource, error) {
 	switch ext {
 	case ".pdf":
 		return newPdfSource(path, logger)
+	case ".epub", ".kepub":
+		return newEpubSource(path, logger)
 	default:
-		return nil, fmt.Errorf("unsupported input file extension(%s). The supported extension is .pdf", ext)
+		return nil, fmt.Errorf("unsupported input file extension(%s). The supported extensions are .pdf, .epub and .kepub", ext)
 	}
 }

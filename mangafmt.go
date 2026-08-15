@@ -74,7 +74,7 @@ func run() (ec int) {
 
 	flag.Usage = func() {
 		output := flag.CommandLine.Output()
-		fmt.Fprintf(output, "%s [options] <input_pdf_file> [input_pdf_file2...]\n\n", os.Args[0])
+		fmt.Fprintf(output, "%s [options] <input_file> [input_file2...]\n\n", os.Args[0])
 		fmt.Fprintf(output, "Options:\n")
 		util.PrintFlagsUsage(output)
 	}
@@ -87,7 +87,7 @@ func run() (ec int) {
 	flag.StringVar(&selectedPr, "pages", "1-", "Page range (Ex. '4-10, 15, 39-'). Default is all pages. Open right range means to the end.")
 	flag.StringVar(&volumeInfo.Title, "title", "", "Volume title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
 	flag.StringVar(&volumeInfo.Author, "author", "", "Volume author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'")
-	flag.Float64Var(&volumeConfig.Density, "density", 300.0, "Output density (DPI)")
+	flag.Float64Var(&volumeConfig.Density, "density", 300.0, "Output density (DPI). This affects pdf input only")
 	flag.BoolVar(&volumeConfig.IsRTL, "rtl", false, "Right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&volumeConfig.IsRTL, "right-to-left", false, "Right-to-left read direction (ex. Japanese manga)")
 	flag.BoolVar(&formatConfig.Trim.Enabled, "trim", true, "Enable/disable edge trimming")

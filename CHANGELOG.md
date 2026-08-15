@@ -1,5 +1,13 @@
 # CHANGELOG.md
 
+## Unreleased
+
+Features:
+
+* Support EPUB/KEPUB file as input with the help from Claude Code.
+  * Only manga epub file(a volume of image pages) is supported. A spine item without an image is skipped and the file is rejected when it has no image page at all.
+  * Neither ImageMagick nor VIPS is required for epub input.
+
 ## v0.7.0 (2026-06-09)
 
 Features:
