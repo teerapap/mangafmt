@@ -2,11 +2,83 @@ package volume
 
 import (
 	"fmt"
+	"image"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/teerapap/mangafmt/internal/log"
+	"rsc.io/pdf"
 )
+
+// pdfSource reads pages from a pdf input file. Each page is rasterized into a
+// temporary image file by an external tool before it is loaded.
+type pdfSource struct {
+	filepath  string
+	pageCount int
+	extractor PdfPageExtractor
+}
+
+func newPdfSource(path string, logger log.Logger) (*pdfSource, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening input pdf file: %w", err)
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("checking input pdf file size: %w", err)
+	}
+	r, err := pdf.NewReader(f, fi.Size())
+	if err != nil {
+		return nil, fmt.Errorf("reading input pdf file: %w", err)
+	}
+
+	extractor, err := FindPdfExtractor(logger)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pdfSource{
+		filepath:  path,
+		pageCount: r.NumPage(),
+		extractor: extractor,
+	}, nil
+}
+
+func (s *pdfSource) Name() string {
+	return "PDF"
+}
+
+func (s *pdfSource) PageCount() int {
+	return s.pageCount
+}
+
+func (s *pdfSource) LoadImage(pageNo int, cfg Config, workDir string, logger log.Logger) (image.Image, error) {
+	// create temp file
+	tmpFile, err := os.CreateTemp(workDir, "mangafmt-*.jpg")
+	if err != nil {
+		return nil, fmt.Errorf("create tmp file for input file(%s) at page %d: %w", s.filepath, pageNo, err)
+	}
+	filename := tmpFile.Name()
+	defer os.RemoveAll(filename)
+	defer tmpFile.Close()
+
+	// extract page from pdf file
+	logger.Debug("Extracting page -", "page_no", pageNo, "tool", s.extractor.Name())
+	if err = s.extractor.Extract(s.filepath, pageNo, cfg.Density, filename, logger); err != nil {
+		return nil, fmt.Errorf("extracting pdf page to tmp file %s: %w", filename, err)
+	}
+
+	// load image file
+	img, format, err := image.Decode(tmpFile)
+	if err != nil {
+		return nil, fmt.Errorf("loading tmp image file %s: %w", filename, err)
+	}
+	logger.Debug("Extracted page -", "page_no", pageNo, "file", filename, "format", format)
+
+	return img, nil
+}
 
 type PdfPageExtractor interface {
 	Name() string

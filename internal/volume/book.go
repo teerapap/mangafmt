@@ -9,10 +9,6 @@ package volume
 
 import (
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -20,7 +16,6 @@ import (
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
 	"github.com/teerapap/mangafmt/internal/volume/format"
-	"rsc.io/pdf"
 )
 
 type Volume struct {
@@ -29,7 +24,7 @@ type Volume struct {
 	PageCount int
 	Config    Config
 	lruCache  *lru.Cache[int, Page]
-	extractor PdfPageExtractor
+	source    InputSource
 }
 
 type Info struct {
@@ -44,42 +39,30 @@ type Config struct {
 
 func NewVolume(path string, info Info, cfg Config, logger log.Logger) (*Volume, error) {
 
-	f, err := os.Open(path)
+	source, err := openInputSource(path, logger)
 	if err != nil {
-		return nil, fmt.Errorf("opening input pdf file: %w", err)
+		return nil, err
 	}
-	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("checking input pdf file size: %w", err)
-	}
-	r, err := pdf.NewReader(f, fi.Size())
-	if err != nil {
-		return nil, fmt.Errorf("reading input pdf file: %w", err)
-	}
+	logger.Debug("Opened input file -", "format", source.Name(), "page_count", source.PageCount())
+
 	info.Title = strings.TrimSpace(info.Title)
 	if info.Title == "" {
 		info.Title = util.NameWithoutExt(filepath.Base(path))
 	}
 	info.Author = strings.TrimSpace(info.Author)
 
-	extractor, err := FindPdfExtractor(logger)
-	if err != nil {
-		return nil, err
-	}
-
 	lruCache, err := lru.New[int, Page](2)
 	if err != nil {
-		return nil, fmt.Errorf("reading input pdf file: %w", err)
+		return nil, fmt.Errorf("creating page cache: %w", err)
 	}
 
 	return &Volume{
 		Filepath:  path,
 		Info:      info,
-		PageCount: r.NumPage(),
+		PageCount: source.PageCount(),
 		Config:    cfg,
 		lruCache:  lruCache,
-		extractor: extractor,
+		source:    source,
 	}, nil
 }
 
@@ -91,27 +74,13 @@ func (v *Volume) LoadPage(pageNo int, workDir string, logger log.Logger) (*Page,
 		return &cachedPage, nil
 	}
 
-	// create temp directory
-	tmpFile, err := os.CreateTemp(workDir, "mangafmt-*.jpg")
+	// load page image from the input file
+	logger.Info("Loading page -", "page_no", pageNo, "format", v.source.Name())
+	img, err := v.source.LoadImage(pageNo, v.Config, workDir, logger)
 	if err != nil {
-		return nil, fmt.Errorf("create tmp file for input file(%s) at page %d: %w", v.Filepath, pageNo, err)
+		return nil, fmt.Errorf("loading page %d from %s file: %w", pageNo, v.source.Name(), err)
 	}
-	filename := tmpFile.Name()
-	defer os.RemoveAll(filename)
-	defer tmpFile.Close()
-
-	// extract page from pdf file
-	logger.Info("Loading page -", "page_no", pageNo, "tool", v.extractor.Name())
-	if err = v.extractor.Extract(v.Filepath, pageNo, v.Config.Density, filename, logger); err != nil {
-		return nil, fmt.Errorf("extracting pdf page to tmp file %s: %w", filename, err)
-	}
-
-	// load image file
-	img, format, err := image.Decode(tmpFile)
-	if err != nil {
-		return nil, fmt.Errorf("loading tmp image file %s: %w", filename, err)
-	}
-	logger.Debug("Loaded page -", "page_no", pageNo, "file", filename, "format", format, "size", img.Bounds())
+	logger.Debug("Loaded page -", "page_no", pageNo, "size", img.Bounds())
 
 	page := Page{
 		img:    img,
