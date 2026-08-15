@@ -19,6 +19,7 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/teerapap/mangafmt/internal/log"
+	"github.com/teerapap/mangafmt/internal/volume/format"
 )
 
 // InputSource reads pages from an input volume file. Each supported input file
@@ -40,7 +41,14 @@ type InputSource interface {
 
 // SourceMetadata is the volume information read from the input file
 type SourceMetadata struct {
-	IsRTL *bool // nil means the input file does not specify the read direction
+	Title      string
+	Author     string
+	Language   string
+	Identifier string
+	IsRTL      *bool // nil means the input file does not specify the read direction
+
+	// Epub is the metadata which only an epub input file has
+	Epub format.EpubMetadata
 }
 
 func boolPtr(v bool) *bool {

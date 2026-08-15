@@ -1,16 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <package version="3.0" unique-identifier="VolumeID" xmlns="http://www.idpf.org/2007/opf">
-    <metadata xmlns:opf="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/">
-        <dc:title>{{ .Title }}</dc:title>
-        <dc:language>{{ .Language }}</dc:language>
-        <dc:identifier id="VolumeID">{{ .VolumeID }}</dc:identifier>
-        <dc:contributor id="contributor">{{ .Contributor }}</dc:contributor>
-        <dc:creator>{{ .Creator }}</dc:creator>
-        <meta property="dcterms:modified">{{ .ModifiedDatetime }}</meta>
-		<meta name="{{ .Cover.Id }}" content="cover"/>
-        <meta property="rendition:orientation">auto</meta>
-        <meta property="rendition:spread">auto</meta>
-        <meta property="rendition:layout">pre-paginated</meta>
+    <metadata {{ .Namespaces }}>
+        {{- range .MetadataEntries }}
+        {{ . }}
+        {{- end }}
     </metadata>
     <manifest>
         <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>

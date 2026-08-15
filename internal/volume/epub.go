@@ -9,6 +9,7 @@ package volume
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -19,12 +20,15 @@ import (
 	"strings"
 
 	"github.com/teerapap/mangafmt/internal/log"
+	"github.com/teerapap/mangafmt/internal/volume/format"
 )
 
 const (
 	epubContainerPath = "META-INF/container.xml"
 	opfMediaType      = "application/oebps-package+xml"
 	ncxMediaType      = "application/x-dtbncx+xml"
+	dcNamespace       = "http://purl.org/dc/elements/1.1/"
+	opfNamespace      = "http://www.idpf.org/2007/opf"
 )
 
 // epubSource reads pages from a manga epub input file - an epub file whose
@@ -93,9 +97,14 @@ func newEpubSource(filePath string, logger log.Logger) (*epubSource, error) {
 	}
 	logger.Debug("Found epub package document -", "path", opfPath)
 
-	var pkg epubPackage
-	if err := unmarshalZipFile(files[opfPath], &pkg); err != nil {
+	opfSrc, err := readZipFile(files[opfPath])
+	if err != nil {
 		return nil, fmt.Errorf("reading epub package document(%s): %w", opfPath, err)
+	}
+
+	var pkg epubPackage
+	if err := unmarshalXml(opfSrc, &pkg); err != nil {
+		return nil, fmt.Errorf("parsing epub package document(%s): %w", opfPath, err)
 	}
 
 	pages, err := resolveEpubPages(files, opfPath, pkg, logger)
@@ -107,7 +116,7 @@ func newEpubSource(filePath string, logger log.Logger) (*epubSource, error) {
 	return &epubSource{
 		filepath: filePath,
 		pages:    pages,
-		metadata: readEpubMetadata(pkg),
+		metadata: readEpubMetadata(pkg, opfSrc, logger),
 	}, nil
 }
 
@@ -123,7 +132,10 @@ func (s *epubSource) Metadata() SourceMetadata {
 	return s.metadata
 }
 
-func readEpubMetadata(pkg epubPackage) SourceMetadata {
+// readEpubMetadata reads the volume information from the package document.
+// The metadata elements which are regenerated in the output file are taken out
+// and the remaining ones are kept as-is.
+func readEpubMetadata(pkg epubPackage, opfSrc []byte, logger log.Logger) SourceMetadata {
 	var meta SourceMetadata
 
 	// the read direction of the volume
@@ -134,7 +146,194 @@ func readEpubMetadata(pkg epubPackage) SourceMetadata {
 		meta.IsRTL = boolPtr(false)
 	}
 
+	nsAttrs, entries, err := readOpfMetadataEntries(opfSrc)
+	if err != nil {
+		// best effort. the metadata read before the error is still kept
+		logger.Warn("Cannot read all metadata in the input epub file. Some of them may be missing in the output file -", "err", err)
+	}
+	meta.Epub.Namespaces = formatNamespaces(nsAttrs)
+
+	names := make([]string, len(entries))
+	regenerated := make(map[string]bool, len(entries)) // ids of the regenerated entries
+	for i, entry := range entries {
+		names[i] = regeneratedMetadataName(entry)
+		if names[i] == "" {
+			continue
+		}
+		// the value is regenerated in the output file from the volume info.
+		// only the first one is taken when the input file has more than one
+		if names[i] == "dc:title" && meta.Title == "" {
+			meta.Title = entry.Text()
+		} else if names[i] == "dc:creator" && meta.Author == "" {
+			meta.Author = entry.Text()
+		} else if names[i] == "dc:language" && meta.Language == "" {
+			meta.Language = entry.Text()
+		} else if names[i] == "dc:identifier" && meta.Identifier == "" {
+			meta.Identifier = entry.Text()
+		}
+		if id := attrValue(entry.Attrs, "id"); id != "" {
+			regenerated[id] = true
+		}
+	}
+
+	meta.Epub.Entries = make([]format.EpubMetadataEntry, 0, len(entries))
+	seen := make(map[string]bool, len(entries))
+	for i, entry := range entries {
+		if name := names[i]; name != "" {
+			// the output file has only one of each regenerated element
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			meta.Epub.Entries = append(meta.Epub.Entries, format.EpubMetadataEntry{Name: name})
+			continue
+		}
+
+		// drop the entries refining a regenerated entry
+		refines := strings.TrimPrefix(strings.TrimSpace(attrValue(entry.Attrs, "refines")), "#")
+		if refines != "" && regenerated[refines] {
+			continue
+		}
+		meta.Epub.Entries = append(meta.Epub.Entries, format.EpubMetadataEntry{Raw: entry.Raw})
+	}
+	logger.Debug("Read metadata from the input epub file -", "entries", len(meta.Epub.Entries), "total_entries", len(entries))
+
 	return meta
+}
+
+// regeneratedMetadataName is the name of the metadata element when mangafmt
+// regenerates it in the output file. It is empty when the element is kept from
+// the input file as-is.
+func regeneratedMetadataName(entry epubMetadataEntry) string {
+	if isDCElement(entry.Name) {
+		local := strings.ToLower(entry.Name.Local)
+		switch local {
+		// mangafmt puts itself as the contributor of the output file
+		case "title", "creator", "language", "identifier", "contributor":
+			return "dc:" + local
+		}
+		return ""
+	}
+
+	if strings.EqualFold(entry.Name.Local, "meta") {
+		property := strings.ToLower(strings.TrimSpace(attrValue(entry.Attrs, "property")))
+		if property == "dcterms:modified" || strings.HasPrefix(property, "rendition:") {
+			return property
+		}
+		if strings.EqualFold(strings.TrimSpace(attrValue(entry.Attrs, "name")), "cover") {
+			return "cover"
+		}
+	}
+	return ""
+}
+
+// epubMetadataEntry is a metadata element in the package document
+type epubMetadataEntry struct {
+	Name  xml.Name
+	Attrs []xml.Attr
+	Raw   string // the element exactly as it appears in the input file
+}
+
+func (e epubMetadataEntry) Text() string {
+	var value struct {
+		Text string `xml:",chardata"`
+	}
+	if err := unmarshalXml([]byte(e.Raw), &value); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value.Text)
+}
+
+// readOpfMetadataEntries reads the metadata elements of the package document
+// as they appear in the input file, together with the xml namespaces they use.
+//
+// The elements are sliced out of the source instead of being marshalled back,
+// so that their namespace prefixes are kept exactly as the input file has
+// them.
+func readOpfMetadataEntries(opfSrc []byte) ([]xml.Attr, []epubMetadataEntry, error) {
+	decoder := newXmlDecoder(bytes.NewReader(opfSrc))
+
+	nsAttrs := make([]xml.Attr, 0, 4)
+	entries := make([]epubMetadataEntry, 0, 16)
+
+	depth := 0
+	metadataDepth := -1
+	var current *epubMetadataEntry
+	var currentStart int64
+
+	for {
+		// the offset before the token is where the token starts
+		tokenStart := decoder.InputOffset()
+		token, err := decoder.Token()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nsAttrs, entries, err
+		}
+		tokenEnd := decoder.InputOffset()
+
+		switch t := token.(type) {
+		case xml.StartElement:
+			local := strings.ToLower(t.Name.Local)
+			if local == "package" || local == "metadata" {
+				nsAttrs = append(nsAttrs, t.Attr...)
+			}
+			if metadataDepth < 0 && local == "metadata" {
+				metadataDepth = depth + 1
+			} else if depth == metadataDepth && current == nil {
+				// a direct child of the metadata element
+				current = &epubMetadataEntry{Name: t.Name, Attrs: t.Attr}
+				currentStart = tokenStart
+			}
+			depth++
+		case xml.EndElement:
+			depth--
+			if current != nil && depth == metadataDepth {
+				current.Raw = strings.TrimSpace(string(opfSrc[currentStart:tokenEnd]))
+				entries = append(entries, *current)
+				current = nil
+			} else if metadataDepth >= 0 && depth == metadataDepth-1 {
+				// the end of the metadata element
+				metadataDepth = -1
+			}
+		}
+	}
+	return nsAttrs, entries, nil
+}
+
+// formatNamespaces builds the xml namespace declarations for the metadata
+// element of the output file. The declarations of the input file are kept so
+// that its metadata entries still resolve.
+func formatNamespaces(attrs []xml.Attr) string {
+	namespaces := map[string]string{
+		"dc":  dcNamespace,
+		"opf": opfNamespace,
+	}
+	prefixes := []string{"dc", "opf"}
+
+	for _, attr := range attrs {
+		// the default namespace(xmlns=) is declared by the package element
+		if attr.Name.Space != "xmlns" || attr.Name.Local == "" {
+			continue
+		}
+		if _, found := namespaces[attr.Name.Local]; found {
+			continue
+		}
+		namespaces[attr.Name.Local] = attr.Value
+		prefixes = append(prefixes, attr.Name.Local)
+	}
+
+	decls := make([]string, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		decls = append(decls, fmt.Sprintf("xmlns:%s=%q", prefix, namespaces[prefix]))
+	}
+	return strings.Join(decls, " ")
+}
+
+func isDCElement(name xml.Name) bool {
+	// the prefix is used as-is when the input file does not declare it
+	return name.Space == dcNamespace || strings.EqualFold(name.Space, "dc")
 }
 
 func (s *epubSource) LoadImage(pageNo int, cfg Config, workDir string, logger log.Logger) (image.Image, error) {
@@ -183,9 +382,14 @@ func readOpfPath(files map[string]*zip.File) (string, error) {
 		return "", fmt.Errorf("input epub file has no %s. It is not a valid epub file", epubContainerPath)
 	}
 
-	var container epubContainer
-	if err := unmarshalZipFile(f, &container); err != nil {
+	src, err := readZipFile(f)
+	if err != nil {
 		return "", fmt.Errorf("reading %s: %w", epubContainerPath, err)
+	}
+
+	var container epubContainer
+	if err := unmarshalXml(src, &container); err != nil {
+		return "", fmt.Errorf("parsing %s: %w", epubContainerPath, err)
 	}
 
 	for _, rootfile := range container.Rootfiles {
@@ -335,11 +539,11 @@ func findImageRefs(f *zip.File) ([]string, error) {
 		var ref string
 		switch strings.ToLower(start.Name.Local) {
 		case "img":
-			ref = attrValue(start, "src")
+			ref = attrValue(start.Attr, "src")
 		case "image": // svg image
-			ref = attrValue(start, "href")
+			ref = attrValue(start.Attr, "href")
 		case "object":
-			ref = attrValue(start, "data")
+			ref = attrValue(start.Attr, "data")
 		}
 		if strings.TrimSpace(ref) != "" {
 			refs = append(refs, ref)
@@ -348,8 +552,8 @@ func findImageRefs(f *zip.File) ([]string, error) {
 	return refs, nil
 }
 
-func attrValue(start xml.StartElement, name string) string {
-	for _, attr := range start.Attr {
+func attrValue(attrs []xml.Attr, name string) string {
+	for _, attr := range attrs {
 		if strings.EqualFold(attr.Name.Local, name) {
 			return attr.Value
 		}
@@ -432,15 +636,20 @@ func newXmlDecoder(r io.Reader) *xml.Decoder {
 	return decoder
 }
 
-func unmarshalZipFile(f *zip.File, v any) error {
+func readZipFile(f *zip.File) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
-		return fmt.Errorf("opening %s in the input epub file: %w", f.Name, err)
+		return nil, fmt.Errorf("opening %s in the input epub file: %w", f.Name, err)
 	}
 	defer rc.Close()
 
-	if err := newXmlDecoder(rc).Decode(v); err != nil {
-		return fmt.Errorf("parsing %s: %w", f.Name, err)
+	src, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s in the input epub file: %w", f.Name, err)
 	}
-	return nil
+	return src, nil
+}
+
+func unmarshalXml(src []byte, v any) error {
+	return newXmlDecoder(bytes.NewReader(src)).Decode(v)
 }

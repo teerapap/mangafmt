@@ -10,6 +10,7 @@
 * Reduce file size by reducing colors to grayscale (except the cover page or configured otherwise).
 * Handle right-to-left (RTL) read direction.
 * Convert to EPUB/KEPUB/CBZ format.
+* Keep the metadata of the input file (EPUB input to EPUB/KEPUB output).
 * Support Windows/OSX/Linux
 
 ### Supported Formats
@@ -30,7 +31,7 @@ mangafmt [options] <input_file> [input_file2...]
 
 Options:
   --author string
-	Volume author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'
+	Volume author. This affects epub/kepub output. Unspecified or blank means using the author in the input file or 'Anonymous'
 
   --convert-only
 	Convert from input to output format only without any modification to the pages at all
@@ -97,7 +98,7 @@ Options:
 	Keep the original left and right page
 
   --title string
-	Volume title. This affects epub/kepub output. Unspecified or blank means using filename without extension
+	Volume title. This affects epub/kepub output. Unspecified or blank means using the title in the input file or the filename without extension
 
   --trim=true|false (default: true)
 	Enable/disable edge trimming

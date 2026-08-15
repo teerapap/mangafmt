@@ -14,12 +14,38 @@ import (
 	"html"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-uuid"
 	"github.com/teerapap/mangafmt/internal/log"
 	"github.com/teerapap/mangafmt/internal/util"
 )
+
+// defaultEpubNamespaces is used when the input file has no metadata namespace
+// declaration to keep
+const defaultEpubNamespaces = `xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf"`
+
+// EpubMetadata is the metadata of an epub volume. It is read from an epub
+// input file and it is only used when the output format is epub/kepub.
+type EpubMetadata struct {
+	// Namespaces is the xml namespace declarations used by Entries
+	Namespaces string
+	// Entries is the metadata elements of the volume in their original order
+	Entries []EpubMetadataEntry
+}
+
+// EpubMetadataEntry is one metadata element of an epub volume
+type EpubMetadataEntry struct {
+	// Name is the name of the metadata element(ex. dc:title) when the element
+	// is regenerated in the output file. The regenerated element takes the
+	// place of this entry so that the metadata stays in the order of the input
+	// file.
+	Name string
+	// Raw is the element as it appears in the input file. It is empty when
+	// Name is set.
+	Raw string
+}
 
 func SaveAsEPUB(volume Volume, outFile string, logger log.Logger, progress PackagingProgressFunc) error {
 	return save("EPUB", volume, outFile, logger, progress)
@@ -63,6 +89,8 @@ type EpubVolume struct {
 	Contributor      string
 	Creator          string
 	ModifiedDatetime string
+	Namespaces       string   // xml namespace declarations of the metadata element
+	MetadataEntries  []string // metadata entries kept from the input file
 	Cover            EpubPageItem
 	Pages            []EpubPage
 }
@@ -87,13 +115,22 @@ type EpubPageItem struct {
 func createEpub(volume Volume, progress PackagingProgressFunc) (EpubVolume, error) {
 	epub := EpubVolume{}
 
-	uuidstr, err := uuid.GenerateUUID()
-	if err != nil {
-		return EpubVolume{}, fmt.Errorf("generating epub uuid: %w", err)
+	// keep the identifier of the input file so that the output file is still
+	// the same volume
+	epub.VolumeID = strings.TrimSpace(volume.Identifier)
+	if epub.VolumeID == "" {
+		uuidstr, err := uuid.GenerateUUID()
+		if err != nil {
+			return EpubVolume{}, fmt.Errorf("generating epub uuid: %w", err)
+		}
+		epub.VolumeID = fmt.Sprintf("urn:uuid:%s", uuidstr)
 	}
+	epub.VolumeID = html.EscapeString(epub.VolumeID)
 
-	epub.VolumeID = fmt.Sprintf("urn:uuid:%s", uuidstr)
-	epub.Language = "en-US"
+	epub.Language = html.EscapeString(strings.TrimSpace(volume.Language))
+	if epub.Language == "" {
+		epub.Language = "en-US"
+	}
 	epub.Title = html.EscapeString(volume.Title)
 	epub.TotalPageCount = len(volume.Pages)
 	epub.IsRTL = volume.IsRTL
@@ -101,7 +138,11 @@ func createEpub(volume Volume, progress PackagingProgressFunc) (EpubVolume, erro
 	if volume.Author == "" {
 		epub.Creator = "Anonymous"
 	} else {
-		epub.Creator = volume.Author
+		epub.Creator = html.EscapeString(volume.Author)
+	}
+	epub.Namespaces = strings.TrimSpace(volume.Epub.Namespaces)
+	if epub.Namespaces == "" {
+		epub.Namespaces = defaultEpubNamespaces
 	}
 	epub.ModifiedDatetime = time.Now().Format(time.RFC3339)
 
@@ -137,7 +178,59 @@ func createEpub(volume Volume, progress PackagingProgressFunc) (EpubVolume, erro
 		epub.Pages = append(epub.Pages, epubPage)
 		progress(float64(i+1) / float64(pageCount))
 	}
+
+	// the cover is only known after the pages are created
+	epub.MetadataEntries = buildMetadataEntries(epub, volume.Epub.Entries)
+
 	return epub, nil
+}
+
+// buildMetadataEntries builds the metadata elements of the output file. Each
+// regenerated element takes the place of the same element of the input file so
+// that the metadata stays in the order of the input file. The elements which
+// the input file does not have are written after them.
+func buildMetadataEntries(epub EpubVolume, inputEntries []EpubMetadataEntry) []string {
+	// in the order they are written when the input file has none of them
+	regenerated := []EpubMetadataEntry{
+		{Name: "dc:title", Raw: fmt.Sprintf("<dc:title>%s</dc:title>", epub.Title)},
+		{Name: "dc:language", Raw: fmt.Sprintf("<dc:language>%s</dc:language>", epub.Language)},
+		{Name: "dc:identifier", Raw: fmt.Sprintf(`<dc:identifier id="VolumeID">%s</dc:identifier>`, epub.VolumeID)},
+		{Name: "dc:contributor", Raw: fmt.Sprintf(`<dc:contributor id="contributor">%s</dc:contributor>`, epub.Contributor)},
+		{Name: "dc:creator", Raw: fmt.Sprintf("<dc:creator>%s</dc:creator>", epub.Creator)},
+		{Name: "dcterms:modified", Raw: fmt.Sprintf(`<meta property="dcterms:modified">%s</meta>`, epub.ModifiedDatetime)},
+		{Name: "cover", Raw: fmt.Sprintf(`<meta name="%s" content="cover"/>`, epub.Cover.Id)},
+		{Name: "rendition:orientation", Raw: `<meta property="rendition:orientation">auto</meta>`},
+		{Name: "rendition:spread", Raw: `<meta property="rendition:spread">auto</meta>`},
+		{Name: "rendition:layout", Raw: `<meta property="rendition:layout">pre-paginated</meta>`},
+	}
+	byName := make(map[string]string, len(regenerated))
+	for _, entry := range regenerated {
+		byName[entry.Name] = entry.Raw
+	}
+
+	entries := make([]string, 0, len(inputEntries)+len(regenerated))
+	written := make(map[string]bool, len(regenerated))
+	for _, entry := range inputEntries {
+		if entry.Name == "" {
+			// kept from the input file as-is
+			entries = append(entries, entry.Raw)
+			continue
+		}
+		raw, found := byName[entry.Name]
+		if !found || written[entry.Name] {
+			continue
+		}
+		written[entry.Name] = true
+		entries = append(entries, raw)
+	}
+
+	// the elements which the input file does not have
+	for _, entry := range regenerated {
+		if !written[entry.Name] {
+			entries = append(entries, entry.Raw)
+		}
+	}
+	return entries
 }
 
 //go:embed templates/epub/mimetype

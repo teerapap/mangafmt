@@ -13,10 +13,13 @@ import (
 )
 
 type Volume struct {
-	Title  string
-	Author string
-	IsRTL  bool
-	Pages  []Page
+	Title      string
+	Author     string
+	Language   string
+	Identifier string
+	IsRTL      bool
+	Epub       EpubMetadata
+	Pages      []Page
 }
 
 type Page struct {

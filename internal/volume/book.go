@@ -55,11 +55,19 @@ func NewVolume(path string, info Info, cfg Config, logger log.Logger) (*Volume, 
 		logger.Info("Using read direction from the input file -", "rtl", cfg.IsRTL)
 	}
 
+	// the title and the author from the command-line flags take precedence
+	// over the ones in the input file
 	info.Title = strings.TrimSpace(info.Title)
+	if info.Title == "" {
+		info.Title = strings.TrimSpace(meta.Title)
+	}
 	if info.Title == "" {
 		info.Title = util.NameWithoutExt(filepath.Base(path))
 	}
 	info.Author = strings.TrimSpace(info.Author)
+	if info.Author == "" {
+		info.Author = strings.TrimSpace(meta.Author)
+	}
 
 	lruCache, err := lru.New[int, Page](2)
 	if err != nil {
@@ -74,6 +82,11 @@ func NewVolume(path string, info Info, cfg Config, logger log.Logger) (*Volume, 
 		lruCache:  lruCache,
 		source:    source,
 	}, nil
+}
+
+// Metadata is the volume information found in the input file
+func (v *Volume) Metadata() SourceMetadata {
+	return v.source.Metadata()
 }
 
 func (v *Volume) LoadPage(pageNo int, workDir string, logger log.Logger) (*Page, error) {
@@ -152,10 +165,16 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progr
 	logger.Info("Done formatting volume -", "total_input_pages", pr.PageCount(), "total_output_pages", len(outPages))
 
 	return &format.Volume{
-		Title:  v.Info.Title,
-		Author: v.Info.Author,
-		IsRTL:  v.Config.IsRTL,
-		Pages:  outPages,
+		Title:      v.Info.Title,
+		Author:     v.Info.Author,
+		Language:   v.Metadata().Language,
+		Identifier: v.Metadata().Identifier,
+		IsRTL:      v.Config.IsRTL,
+		Epub: format.EpubMetadata{
+			Namespaces: v.Metadata().Epub.Namespaces,
+			Entries:    v.Metadata().Epub.Entries,
+		},
+		Pages: outPages,
 	}, nil
 }
 
