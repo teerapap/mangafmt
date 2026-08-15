@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"text/template"
 
@@ -144,6 +145,18 @@ func IsReadableFile(path string) (string, error) {
 
 func IsWritableFile(path string) (string, error) {
 	return filepath.Abs(path)
+}
+
+// IsSamePath checks if the two absolute paths point to the same file
+func IsSamePath(a string, b string) bool {
+	if a == b {
+		return true
+	}
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		// the file systems are case-insensitive by default
+		return strings.EqualFold(a, b)
+	}
+	return false
 }
 
 func NameWithoutExt(filename string) string {

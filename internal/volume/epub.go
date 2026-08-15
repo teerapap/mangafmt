@@ -33,6 +33,7 @@ const (
 type epubSource struct {
 	filepath string
 	pages    []epubPage
+	metadata SourceMetadata
 }
 
 // epubPage is an image page resolved from a spine item
@@ -106,6 +107,7 @@ func newEpubSource(filePath string, logger log.Logger) (*epubSource, error) {
 	return &epubSource{
 		filepath: filePath,
 		pages:    pages,
+		metadata: readEpubMetadata(pkg),
 	}, nil
 }
 
@@ -115,6 +117,24 @@ func (s *epubSource) Name() string {
 
 func (s *epubSource) PageCount() int {
 	return len(s.pages)
+}
+
+func (s *epubSource) Metadata() SourceMetadata {
+	return s.metadata
+}
+
+func readEpubMetadata(pkg epubPackage) SourceMetadata {
+	var meta SourceMetadata
+
+	// the read direction of the volume
+	switch strings.ToLower(strings.TrimSpace(pkg.Spine.Direction)) {
+	case "rtl":
+		meta.IsRTL = boolPtr(true)
+	case "ltr":
+		meta.IsRTL = boolPtr(false)
+	}
+
+	return meta
 }
 
 func (s *epubSource) LoadImage(pageNo int, cfg Config, workDir string, logger log.Logger) (image.Image, error) {

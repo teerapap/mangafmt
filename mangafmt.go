@@ -88,8 +88,8 @@ func run() (ec int) {
 	flag.StringVar(&volumeInfo.Title, "title", "", "Volume title. This affects epub/kepub output. Unspecified or blank means using filename without extension")
 	flag.StringVar(&volumeInfo.Author, "author", "", "Volume author. This affects epub/kepub output. Unspecified or blank means 'Anonymous'")
 	flag.Float64Var(&volumeConfig.Density, "density", 300.0, "Output density (DPI). This affects pdf input only")
-	flag.BoolVar(&volumeConfig.IsRTL, "rtl", false, "Right-to-left read direction (ex. Japanese manga)")
-	flag.BoolVar(&volumeConfig.IsRTL, "right-to-left", false, "Right-to-left read direction (ex. Japanese manga)")
+	flag.BoolVar(&volumeConfig.IsRTL, "rtl", false, "Right-to-left read direction (ex. Japanese manga). Unspecified means using the read direction in the input file if it has one")
+	flag.BoolVar(&volumeConfig.IsRTL, "right-to-left", false, "Right-to-left read direction (ex. Japanese manga). Unspecified means using the read direction in the input file if it has one")
 	flag.BoolVar(&formatConfig.Trim.Enabled, "trim", true, "Enable/disable edge trimming")
 	flag.Float64Var(&formatConfig.Trim.FuzzP, "fuzz", 0.1, "Color fuzz (percentage)[0.0-1.0]")
 	flag.Float64Var(&formatConfig.Trim.MinSizeP, "trim-min-size", 0.85, "Minimum size after trimmed (percentage)[0.0-1.0]")
@@ -124,6 +124,14 @@ func run() (ec int) {
 		flag.Usage()
 		return 1
 	}
+
+	// remember the flags explicitly set by the user. They take precedence over
+	// the same information found in the input file
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "rtl" || f.Name == "right-to-left" {
+			volumeConfig.IsRTLSet = true
+		}
+	})
 
 	if verbose {
 		clog.SetLevel(clog.DebugLevel)
@@ -182,6 +190,16 @@ func run() (ec int) {
 				outputFiles[i] = util.Must1(util.IsWritableFile(outputFiles[i]))("checking output file path", consoleLogger)
 			} else {
 				outputFiles[i] = util.Must1(util.IsWritableFile(outputFile))("checking output file path", consoleLogger)
+			}
+		}
+	}
+
+	// the output file must never overwrite an input file
+	for _, outFile := range outputFiles {
+		for _, inFile := range inputFiles {
+			if util.IsSamePath(outFile, inFile) {
+				err := fmt.Errorf("output file(%s) is the same as the input file. Please specify a different --output", outFile)
+				util.Must(err)("checking output file path", consoleLogger)
 			}
 		}
 	}

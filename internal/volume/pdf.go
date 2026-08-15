@@ -54,6 +54,10 @@ func (s *pdfSource) PageCount() int {
 	return s.pageCount
 }
 
+func (s *pdfSource) Metadata() SourceMetadata {
+	return SourceMetadata{}
+}
+
 func (s *pdfSource) LoadImage(pageNo int, cfg Config, workDir string, logger log.Logger) (image.Image, error) {
 	// create temp file
 	tmpFile, err := os.CreateTemp(workDir, "mangafmt-*.jpg")

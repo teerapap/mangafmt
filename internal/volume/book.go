@@ -35,6 +35,9 @@ type Info struct {
 type Config struct {
 	Density float64
 	IsRTL   bool
+	// IsRTLSet is true when the read direction is explicitly set by the user.
+	// It takes precedence over the read direction in the input file.
+	IsRTLSet bool
 }
 
 func NewVolume(path string, info Info, cfg Config, logger log.Logger) (*Volume, error) {
@@ -44,6 +47,13 @@ func NewVolume(path string, info Info, cfg Config, logger log.Logger) (*Volume, 
 		return nil, err
 	}
 	logger.Debug("Opened input file -", "format", source.Name(), "page_count", source.PageCount())
+
+	meta := source.Metadata()
+	if !cfg.IsRTLSet && meta.IsRTL != nil {
+		// the input file knows its own read direction
+		cfg.IsRTL = *meta.IsRTL
+		logger.Info("Using read direction from the input file -", "rtl", cfg.IsRTL)
+	}
 
 	info.Title = strings.TrimSpace(info.Title)
 	if info.Title == "" {

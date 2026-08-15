@@ -79,7 +79,7 @@ Options:
 	Enable/disable resize to aspect fit in output screen size
 
   --right-to-left, --rtl
-	Right-to-left read direction (ex. Japanese manga)
+	Right-to-left read direction (ex. Japanese manga). Unspecified means using the read direction in the input file if it has one
 
   --spread=true|false (default: true)
 	Enable/disable double-page spread detection and connection
