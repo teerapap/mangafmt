@@ -46,6 +46,13 @@ type epubPage struct {
 	mediaType string
 }
 
+// epubSpineDoc is a spine item and the page it is resolved into. It is used to
+// find the page an entry of the table of content lands on.
+type epubSpineDoc struct {
+	path   string
+	pageNo int // zero when the spine item has no image page
+}
+
 // epubContainer is META-INF/container.xml
 type epubContainer struct {
 	Rootfiles []epubRootfile `xml:"rootfiles>rootfile"`
@@ -107,16 +114,19 @@ func newEpubSource(filePath string, logger log.Logger) (*epubSource, error) {
 		return nil, fmt.Errorf("parsing epub package document(%s): %w", opfPath, err)
 	}
 
-	pages, err := resolveEpubPages(files, opfPath, pkg, logger)
+	pages, spine, err := resolveEpubPages(files, opfPath, pkg, logger)
 	if err != nil {
 		return nil, err
 	}
 	logger.Debug("Resolved epub pages -", "total_pages", len(pages), "total_spine_items", len(pkg.Spine.ItemRefs))
 
+	metadata := readEpubMetadata(pkg, opfSrc, logger)
+	metadata.Epub.TableOfContents = readEpubToc(files, opfPath, pkg, spine, logger)
+
 	return &epubSource{
 		filepath: filePath,
 		pages:    pages,
-		metadata: readEpubMetadata(pkg, opfSrc, logger),
+		metadata: metadata,
 	}, nil
 }
 
@@ -408,13 +418,14 @@ func readOpfPath(files map[string]*zip.File) (string, error) {
 // resolveEpubPages resolves each spine item into an image page in reading
 // order. A spine item without an image is skipped with a warning. The volume
 // must have at least one image page.
-func resolveEpubPages(files map[string]*zip.File, opfPath string, pkg epubPackage, logger log.Logger) ([]epubPage, error) {
+func resolveEpubPages(files map[string]*zip.File, opfPath string, pkg epubPackage, logger log.Logger) ([]epubPage, []epubSpineDoc, error) {
 	items := make(map[string]epubManifestItem, len(pkg.Manifest.Items))
 	for _, item := range pkg.Manifest.Items {
 		items[item.Id] = item
 	}
 
 	pages := make([]epubPage, 0, len(pkg.Spine.ItemRefs))
+	spine := make([]epubSpineDoc, 0, len(pkg.Spine.ItemRefs))
 	for _, ref := range pkg.Spine.ItemRefs {
 		item, found := items[ref.IdRef]
 		if !found {
@@ -429,30 +440,36 @@ func resolveEpubPages(files map[string]*zip.File, opfPath string, pkg epubPackag
 		itemPath := resolveHref(opfPath, item.Href)
 		mediaType := strings.ToLower(strings.TrimSpace(item.MediaType))
 
+		var page *epubPage
 		switch {
 		case strings.HasPrefix(mediaType, "image/"):
 			// the spine item is the image itself
 			file, found := files[itemPath]
 			if !found {
 				logger.Warn("Skipping page. The image file is not found in the input epub file -", "page", item.Href)
-				continue
+				break
 			}
-			pages = append(pages, epubPage{zipPath: path.Clean(file.Name), mediaType: mediaType})
+			page = &epubPage{zipPath: path.Clean(file.Name), mediaType: mediaType}
 		case isDocumentMediaType(mediaType):
-			page, found := resolveEpubPage(files, itemPath, logger)
-			if !found {
-				continue
+			if resolved, found := resolveEpubPage(files, itemPath, logger); found {
+				page = &resolved
 			}
-			pages = append(pages, page)
 		default:
 			logger.Warn("Skipping page. The spine item is neither an image nor a document -", "page", item.Href, "media_type", item.MediaType)
 		}
+
+		doc := epubSpineDoc{path: itemPath}
+		if page != nil {
+			pages = append(pages, *page)
+			doc.pageNo = len(pages)
+		}
+		spine = append(spine, doc)
 	}
 
 	if len(pages) == 0 {
-		return nil, fmt.Errorf("input epub file has no image page. Only manga epub file(a volume of image pages) is supported")
+		return nil, nil, fmt.Errorf("input epub file has no image page. Only manga epub file(a volume of image pages) is supported")
 	}
-	return pages, nil
+	return pages, spine, nil
 }
 
 // resolveEpubPage resolves a spine document into the image page it shows. If
@@ -634,6 +651,193 @@ func newXmlDecoder(r io.Reader) *xml.Decoder {
 		return input, nil
 	}
 	return decoder
+}
+
+// readEpubToc reads the table of content of the input file. The epub3
+// navigation document is preferred over the epub2 ncx document. Each entry
+// points to the page number in the input file it lands on.
+func readEpubToc(files map[string]*zip.File, opfPath string, pkg epubPackage, spine []epubSpineDoc, logger log.Logger) []format.EpubTocEntry {
+	// the page an entry lands on. an entry pointing to a page which is not an
+	// image page moves forward to the next image page
+	pageOf := func(basePath string, href string) int {
+		if strings.TrimSpace(href) == "" || isRemoteHref(href) {
+			return 0
+		}
+		target := resolveHref(basePath, href)
+		for i, doc := range spine {
+			if doc.path != target {
+				continue
+			}
+			for _, next := range spine[i:] {
+				if next.pageNo > 0 {
+					return next.pageNo
+				}
+			}
+			return 0
+		}
+		return 0
+	}
+
+	// the epub3 navigation document is preferred over the epub2 ncx document
+	for _, wantNcx := range []bool{false, true} {
+		for _, item := range pkg.Manifest.Items {
+			isNcx := strings.EqualFold(strings.TrimSpace(item.MediaType), ncxMediaType)
+			if !isNavItem(item) || isNcx != wantNcx {
+				continue
+			}
+
+			tocPath := resolveHref(opfPath, item.Href)
+			file, found := files[tocPath]
+			if !found {
+				continue
+			}
+			src, err := readZipFile(file)
+			if err != nil {
+				logger.Debug("Cannot read the table of content of the input epub file -", "path", tocPath, "err", err)
+				continue
+			}
+
+			var root xmlNode
+			if err := unmarshalXml(src, &root); err != nil {
+				logger.Debug("Cannot parse the table of content of the input epub file -", "path", tocPath, "err", err)
+				continue
+			}
+
+			var toc []format.EpubTocEntry
+			if isNcx {
+				toc = readNcxToc(root, tocPath, pageOf)
+			} else {
+				toc = readNavToc(root, tocPath, pageOf)
+			}
+			if len(toc) > 0 {
+				logger.Debug("Found the table of content in the input epub file -", "path", tocPath, "entries", len(toc))
+				return toc
+			}
+		}
+	}
+	return nil
+}
+
+// readNavToc reads the table of content from an epub3 navigation document
+func readNavToc(root xmlNode, navPath string, pageOf func(string, string) int) []format.EpubTocEntry {
+	nav := root.findDescendant(func(n xmlNode) bool {
+		return strings.EqualFold(n.XMLName.Local, "nav") &&
+			strings.EqualFold(strings.TrimSpace(attrValue(n.Attrs, "type")), "toc")
+	})
+	if nav == nil {
+		return nil
+	}
+	list := nav.findChild("ol")
+	if list == nil {
+		return nil
+	}
+	return readNavList(*list, navPath, pageOf)
+}
+
+func readNavList(list xmlNode, navPath string, pageOf func(string, string) int) []format.EpubTocEntry {
+	entries := make([]format.EpubTocEntry, 0, len(list.Children))
+	for _, item := range list.findChildren("li") {
+		var entry format.EpubTocEntry
+		if link := item.findChild("a"); link != nil {
+			entry.Label = link.TextContent()
+			entry.PageNo = pageOf(navPath, attrValue(link.Attrs, "href"))
+		} else if span := item.findChild("span"); span != nil {
+			// an entry without a link
+			entry.Label = span.TextContent()
+		}
+		if sublist := item.findChild("ol"); sublist != nil {
+			entry.Children = readNavList(*sublist, navPath, pageOf)
+		}
+		if entry.Label == "" && len(entry.Children) == 0 {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// readNcxToc reads the table of content from an epub2 ncx document
+func readNcxToc(root xmlNode, ncxPath string, pageOf func(string, string) int) []format.EpubTocEntry {
+	navMap := root.findDescendant(func(n xmlNode) bool {
+		return strings.EqualFold(n.XMLName.Local, "navMap")
+	})
+	if navMap == nil {
+		return nil
+	}
+	return readNcxNavPoints(*navMap, ncxPath, pageOf)
+}
+
+func readNcxNavPoints(parent xmlNode, ncxPath string, pageOf func(string, string) int) []format.EpubTocEntry {
+	points := parent.findChildren("navPoint")
+	entries := make([]format.EpubTocEntry, 0, len(points))
+	for _, point := range points {
+		var entry format.EpubTocEntry
+		if label := point.findChild("navLabel"); label != nil {
+			if text := label.findChild("text"); text != nil {
+				entry.Label = text.TextContent()
+			}
+		}
+		if content := point.findChild("content"); content != nil {
+			entry.PageNo = pageOf(ncxPath, attrValue(content.Attrs, "src"))
+		}
+		entry.Children = readNcxNavPoints(point, ncxPath, pageOf)
+		if entry.Label == "" && len(entry.Children) == 0 {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// xmlNode is a generic xml element. It is used to walk the documents whose
+// structure differs between epub files.
+type xmlNode struct {
+	XMLName  xml.Name
+	Attrs    []xml.Attr `xml:",any,attr"`
+	Text     string     `xml:",chardata"`
+	Children []xmlNode  `xml:",any"`
+}
+
+func (n xmlNode) findChild(local string) *xmlNode {
+	for i := range n.Children {
+		if strings.EqualFold(n.Children[i].XMLName.Local, local) {
+			return &n.Children[i]
+		}
+	}
+	return nil
+}
+
+func (n xmlNode) findChildren(local string) []xmlNode {
+	children := make([]xmlNode, 0, len(n.Children))
+	for _, child := range n.Children {
+		if strings.EqualFold(child.XMLName.Local, local) {
+			children = append(children, child)
+		}
+	}
+	return children
+}
+
+func (n xmlNode) findDescendant(match func(xmlNode) bool) *xmlNode {
+	for i := range n.Children {
+		if match(n.Children[i]) {
+			return &n.Children[i]
+		}
+		if found := n.Children[i].findDescendant(match); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// TextContent is the text of the element and of all its children
+func (n xmlNode) TextContent() string {
+	var sb strings.Builder
+	sb.WriteString(n.Text)
+	for _, child := range n.Children {
+		sb.WriteString(" ")
+		sb.WriteString(child.TextContent())
+	}
+	return strings.Join(strings.Fields(sb.String()), " ")
 }
 
 func readZipFile(f *zip.File) ([]byte, error) {

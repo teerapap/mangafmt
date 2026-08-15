@@ -29,10 +29,21 @@ const defaultEpubNamespaces = `xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns
 // EpubMetadata is the metadata of an epub volume. It is read from an epub
 // input file and it is only used when the output format is epub/kepub.
 type EpubMetadata struct {
+	// TableOfContents is the table of content of the volume
+	TableOfContents []EpubTocEntry
 	// Namespaces is the xml namespace declarations used by Entries
 	Namespaces string
 	// Entries is the metadata elements of the volume in their original order
 	Entries []EpubMetadataEntry
+}
+
+// EpubTocEntry is an entry in the table of content of an epub volume
+type EpubTocEntry struct {
+	Label string
+	// PageNo is the page number(1-based) of the volume the entry points to. It
+	// is zero when the entry points to no page of the volume.
+	PageNo   int
+	Children []EpubTocEntry
 }
 
 // EpubMetadataEntry is one metadata element of an epub volume
@@ -93,6 +104,18 @@ type EpubVolume struct {
 	MetadataEntries  []string // metadata entries kept from the input file
 	Cover            EpubPageItem
 	Pages            []EpubPage
+
+	TableOfContents      []EpubTocItem
+	TableOfContentsDepth int
+}
+
+// EpubTocItem is an entry in the table of content of the output file
+type EpubTocItem struct {
+	Id        string
+	PlayOrder int
+	Label     string
+	Url       string
+	Children  []EpubTocItem
 }
 
 type EpubPage struct {
@@ -179,10 +202,58 @@ func createEpub(volume Volume, progress PackagingProgressFunc) (EpubVolume, erro
 		progress(float64(i+1) / float64(pageCount))
 	}
 
-	// the cover is only known after the pages are created
+	// the cover and the page urls are only known after the pages are created
 	epub.MetadataEntries = buildMetadataEntries(epub, volume.Epub.Entries)
+	epub.TableOfContents, epub.TableOfContentsDepth = buildTableOfContents(volume.Epub.TableOfContents, epub)
 
 	return epub, nil
+}
+
+// buildTableOfContents builds the table of content of the output file from the
+// one kept from the input file. The volume title pointing at the first page is
+// used when the input file has no table of content.
+func buildTableOfContents(entries []EpubTocEntry, epub EpubVolume) ([]EpubTocItem, int) {
+	if len(epub.Pages) == 0 {
+		return nil, 0
+	}
+
+	playOrder := 0
+	var build func(entries []EpubTocEntry, depth int) ([]EpubTocItem, int)
+	build = func(entries []EpubTocEntry, depth int) ([]EpubTocItem, int) {
+		items := make([]EpubTocItem, 0, len(entries))
+		maxDepth := depth - 1
+		for _, entry := range entries {
+			if entry.PageNo < 1 || entry.PageNo > len(epub.Pages) {
+				continue
+			}
+			playOrder++
+			order := playOrder // the children take the numbers after this one
+
+			children, childrenDepth := build(entry.Children, depth+1)
+			items = append(items, EpubTocItem{
+				Id:        fmt.Sprintf("toc-%d", order),
+				PlayOrder: order,
+				Label:     html.EscapeString(entry.Label),
+				Url:       epub.Pages[entry.PageNo-1].Xhtml.Url,
+				Children:  children,
+			})
+			maxDepth = max(maxDepth, depth, childrenDepth)
+		}
+		return items, maxDepth
+	}
+
+	items, depth := build(entries, 1)
+	if len(items) == 0 {
+		// the input file has no table of content
+		items = []EpubTocItem{{
+			Id:        "toc-1",
+			PlayOrder: 1,
+			Label:     epub.Title, // already escaped
+			Url:       epub.Pages[0].Xhtml.Url,
+		}}
+		depth = 1
+	}
+	return items, depth
 }
 
 // buildMetadataEntries builds the metadata elements of the output file. Each

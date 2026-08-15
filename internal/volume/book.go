@@ -139,6 +139,9 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progr
 	}
 
 	outPages := make([]format.Page, 0, v.PageCount)
+	// the output page number(1-based) each input page lands on. two input pages
+	// connected into one double-page spread land on the same output page.
+	outPageOf := make(map[int]int, v.PageCount)
 	for pageNo, i := 1, 1; pageNo <= v.PageCount; {
 		if !pr.Contains(pageNo) {
 			pageNo += 1
@@ -156,12 +159,17 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progr
 		if err != nil {
 			return nil, fmt.Errorf("formatting page %d: %w", pageNo, err)
 		}
+		for p := pageNo; p < pageNo+formatted; p++ {
+			outPageOf[p] = len(outPages) + 1
+		}
 		outPages = append(outPages, outPage...)
 		pageNo += formatted
 		i += formatted
 		progress(v, float64(i-1)/float64(pr.PageCount()), pageNo-1)
 		logger.Debug("Done formatting page -", "next_input_page", pageNo, "next_output_page", len(outPages))
 	}
+	toc := v.remapToc(outPageOf, logger)
+
 	logger.Info("Done formatting volume -", "total_input_pages", pr.PageCount(), "total_output_pages", len(outPages))
 
 	return &format.Volume{
@@ -171,11 +179,51 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progr
 		Identifier: v.Metadata().Identifier,
 		IsRTL:      v.Config.IsRTL,
 		Epub: format.EpubMetadata{
-			Namespaces: v.Metadata().Epub.Namespaces,
-			Entries:    v.Metadata().Epub.Entries,
+			TableOfContents: toc,
+			Namespaces:      v.Metadata().Epub.Namespaces,
+			Entries:         v.Metadata().Epub.Entries,
 		},
 		Pages: outPages,
 	}, nil
+}
+
+// remapToc moves the table of content of the input file onto the output pages.
+// An entry pointing to a page which is not in the output is removed from the
+// table.
+func (v *Volume) remapToc(outPageOf map[int]int, logger log.Logger) []format.EpubTocEntry {
+	if len(v.Metadata().Epub.TableOfContents) == 0 {
+		return nil
+	}
+
+	logger.Info("Remapping table of contents onto the output pages")
+	toc := remapTocEntries(v.Metadata().Epub.TableOfContents, outPageOf)
+	logger.Debug("Done remapping table of contents -", "entries", len(toc), "input_entries", len(v.Metadata().Epub.TableOfContents))
+	return toc
+}
+
+func remapTocEntries(entries []format.EpubTocEntry, outPageOf map[int]int) []format.EpubTocEntry {
+	remapped := make([]format.EpubTocEntry, 0, len(entries))
+	for _, entry := range entries {
+		mapped := format.EpubTocEntry{
+			Label:    entry.Label,
+			Children: remapTocEntries(entry.Children, outPageOf),
+		}
+
+		// two pages connected into one double-page spread land on the same
+		// output page
+		if outPageNo, found := outPageOf[entry.PageNo]; found {
+			mapped.PageNo = outPageNo
+		} else if len(mapped.Children) == 0 {
+			// the page of the entry is not in the output
+			continue
+		} else {
+			// keep the children by pointing the entry to its first child
+			mapped.PageNo = mapped.Children[0].PageNo
+		}
+
+		remapped = append(remapped, mapped)
+	}
+	return remapped
 }
 
 func (v *Volume) formatPage(pageNo int, pr PageRange, cfg FormatConfig, logger log.Logger) ([]format.Page, int, error) {

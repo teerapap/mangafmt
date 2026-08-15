@@ -7,9 +7,7 @@
     </head>
     <body>
         <nav xmlns:epub="http://www.idpf.org/2007/ops" epub:type="toc" id="toc">
-            <ol>
-                <li><a href="{{ (index .Pages 0).Xhtml.Url }}">{{ .Title }}</a></li>
-            </ol>
+            {{- template "tocList" .TableOfContents }}
         </nav>
         <nav epub:type="page-list">
             <ol>
@@ -18,3 +16,12 @@
         </nav>
     </body>
 </html>
+{{- define "tocList" }}
+            <ol>
+                {{- range . }}
+                <li><a href="{{ .Url }}">{{ .Label }}</a>
+                    {{- if .Children }}{{ template "tocList" .Children }}{{ end }}
+                </li>
+                {{- end }}
+            </ol>
+{{- end }}
