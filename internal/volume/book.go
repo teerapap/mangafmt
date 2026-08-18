@@ -89,6 +89,12 @@ func (v *Volume) Metadata() SourceMetadata {
 	return v.source.Metadata()
 }
 
+// Skipped is the number of pages in the input file which are skipped so they
+// are not in the output file
+func (v *Volume) Skipped() SkippedPages {
+	return v.source.Skipped()
+}
+
 func (v *Volume) LoadPage(pageNo int, workDir string, logger log.Logger) (*Page, error) {
 	// load from cache first
 	cachedPage, found := v.lruCache.Get(pageNo)
@@ -170,7 +176,15 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progr
 	}
 	toc := v.remapToc(outPageOf, logger)
 
-	logger.Info("Done formatting volume -", "total_input_pages", pr.PageCount(), "total_output_pages", len(outPages))
+	skipped := v.Skipped()
+	doneArgs := []any{"total_input_pages", pr.PageCount(), "total_output_pages", len(outPages)}
+	if skipped.NoImage > 0 {
+		doneArgs = append(doneArgs, "skipped_no_image_pages", skipped.NoImage)
+	}
+	if skipped.Encrypted > 0 {
+		doneArgs = append(doneArgs, "skipped_encrypted_pages", skipped.Encrypted)
+	}
+	logger.Info("Done formatting volume -", doneArgs...)
 
 	return &format.Volume{
 		Title:      v.Info.Title,

@@ -31,12 +31,23 @@ type InputSource interface {
 	// PageCount is the total number of pages in the input file.
 	PageCount() int
 
+	// Skipped is the number of pages in the input file which are skipped and
+	// left out of the page count.
+	Skipped() SkippedPages
+
 	// Metadata is the volume information found in the input file. Its fields
 	// are left empty if the input file has no such information.
 	Metadata() SourceMetadata
 
 	// LoadImage loads the image of the page number(1-based) in the input file.
 	LoadImage(pageNo int, cfg Config, workDir string, logger log.Logger) (image.Image, error)
+}
+
+// SkippedPages is the number of pages in the input file which are skipped so
+// they are not in the output file
+type SkippedPages struct {
+	NoImage   int // the page has no image
+	Encrypted int // the page is encrypted(DRM-protected)
 }
 
 // SourceMetadata is the volume information read from the input file

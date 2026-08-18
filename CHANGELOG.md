@@ -6,6 +6,7 @@ Features:
 
 * Support EPUB/KEPUB file as input with the help from Claude Code.
   * Only manga epub file(a volume of image pages) is supported. A spine item without an image is skipped and the file is rejected when it has no image page at all.
+  * A DRM-protected page is skipped because it cannot be read. The file is rejected when all of its pages are DRM-protected.
   * Neither ImageMagick nor VIPS is required for epub input.
   * The metadata and the table of contents of the input file are kept in the epub/kepub output file.
   * The read direction is read from the input file. The `--rtl` flag takes precedence over it.

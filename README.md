@@ -18,6 +18,7 @@
 * Input File
   * PDF
   * EPUB/KEPUB (implemented with the help from Claude Code)
+    * A DRM-protected file is not supported because its pages cannot be read.
 * Output File
   * EPUB
   * KEPUB

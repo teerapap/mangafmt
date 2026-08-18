@@ -24,12 +24,20 @@ import (
 )
 
 const (
-	epubContainerPath = "META-INF/container.xml"
-	opfMediaType      = "application/oebps-package+xml"
-	ncxMediaType      = "application/x-dtbncx+xml"
-	dcNamespace       = "http://purl.org/dc/elements/1.1/"
-	opfNamespace      = "http://www.idpf.org/2007/opf"
+	epubContainerPath  = "META-INF/container.xml"
+	epubEncryptionPath = "META-INF/encryption.xml"
+	opfMediaType       = "application/oebps-package+xml"
+	ncxMediaType       = "application/x-dtbncx+xml"
+	dcNamespace        = "http://purl.org/dc/elements/1.1/"
+	opfNamespace       = "http://www.idpf.org/2007/opf"
 )
+
+// fontObfuscationAlgorithms are the algorithms which scramble the embedded
+// font files. They are not DRM and no page depends on them.
+var fontObfuscationAlgorithms = []string{
+	"http://www.idpf.org/2008/embedding",
+	"http://ns.adobe.com/pdf/enc#RC",
+}
 
 // epubSource reads pages from a manga epub input file - an epub file whose
 // spine documents are images. The images are read directly from the epub zip
@@ -37,6 +45,7 @@ const (
 type epubSource struct {
 	filepath string
 	pages    []epubPage
+	skipped  SkippedPages
 	metadata SourceMetadata
 }
 
@@ -86,6 +95,30 @@ type epubSpine struct {
 	} `xml:"itemref"`
 }
 
+// epubEncryption is META-INF/encryption.xml. Both the DRM-protected epub file
+// and the epub file with the obfuscated fonts have it.
+type epubEncryption struct {
+	Data []epubEncryptedData `xml:"EncryptedData"`
+}
+
+type epubEncryptedData struct {
+	Method struct {
+		Algorithm string `xml:"Algorithm,attr"`
+	} `xml:"EncryptionMethod"`
+	References []struct {
+		URI string `xml:"URI,attr"`
+	} `xml:"CipherData>CipherReference"`
+}
+
+// epubSkipReason tells why a spine item does not become an image page
+type epubSkipReason int
+
+const (
+	epubNotSkipped epubSkipReason = iota
+	epubSkipNoImage
+	epubSkipEncrypted
+)
+
 func newEpubSource(filePath string, logger log.Logger) (*epubSource, error) {
 	r, err := zip.OpenReader(filePath)
 	if err != nil {
@@ -114,18 +147,21 @@ func newEpubSource(filePath string, logger log.Logger) (*epubSource, error) {
 		return nil, fmt.Errorf("parsing epub package document(%s): %w", opfPath, err)
 	}
 
-	pages, spine, err := resolveEpubPages(files, opfPath, pkg, logger)
+	encrypted := readEncryptedPaths(files, logger)
+
+	pages, spine, skipped, err := resolveEpubPages(files, opfPath, pkg, encrypted, logger)
 	if err != nil {
 		return nil, err
 	}
 	logger.Debug("Resolved epub pages -", "total_pages", len(pages), "total_spine_items", len(pkg.Spine.ItemRefs))
 
 	metadata := readEpubMetadata(pkg, opfSrc, logger)
-	metadata.Epub.TableOfContents = readEpubToc(files, opfPath, pkg, spine, logger)
+	metadata.Epub.TableOfContents = readEpubToc(files, opfPath, pkg, spine, encrypted, logger)
 
 	return &epubSource{
 		filepath: filePath,
 		pages:    pages,
+		skipped:  skipped,
 		metadata: metadata,
 	}, nil
 }
@@ -136,6 +172,10 @@ func (s *epubSource) Name() string {
 
 func (s *epubSource) PageCount() int {
 	return len(s.pages)
+}
+
+func (s *epubSource) Skipped() SkippedPages {
+	return s.skipped
 }
 
 func (s *epubSource) Metadata() SourceMetadata {
@@ -415,21 +455,76 @@ func readOpfPath(files map[string]*zip.File) (string, error) {
 	return "", fmt.Errorf("input epub file has no package document in %s. It is not a valid epub file", epubContainerPath)
 }
 
+// readEncryptedPaths reads the paths of the encrypted files inside the epub zip
+// archive. The obfuscated fonts are left out because they are not DRM and no
+// page depends on them. It returns nothing if the input file is not encrypted.
+func readEncryptedPaths(files map[string]*zip.File, logger log.Logger) map[string]bool {
+	file, found := files[epubEncryptionPath]
+	if !found {
+		return nil
+	}
+
+	src, err := readZipFile(file)
+	if err != nil {
+		logger.Warn("Cannot read the encryption information of the input epub file -", "path", epubEncryptionPath, "err", err)
+		return nil
+	}
+
+	var enc epubEncryption
+	if err := unmarshalXml(src, &enc); err != nil {
+		logger.Warn("Cannot parse the encryption information of the input epub file -", "path", epubEncryptionPath, "err", err)
+		return nil
+	}
+
+	encrypted := make(map[string]bool, len(enc.Data))
+	for _, data := range enc.Data {
+		if isFontObfuscation(data.Method.Algorithm) {
+			continue
+		}
+		for _, ref := range data.References {
+			if strings.TrimSpace(ref.URI) == "" {
+				continue
+			}
+			// the uri is relative to the root of the zip archive
+			encrypted[resolveHref("", ref.URI)] = true
+		}
+	}
+	if len(encrypted) > 0 {
+		logger.Debug("The input epub file is encrypted -", "total_encrypted_files", len(encrypted))
+	}
+	return encrypted
+}
+
+// isFontObfuscation checks if the encryption algorithm only scrambles an
+// embedded font file
+func isFontObfuscation(algorithm string) bool {
+	algorithm = strings.TrimSpace(algorithm)
+	for _, obfuscation := range fontObfuscationAlgorithms {
+		if strings.EqualFold(algorithm, obfuscation) {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveEpubPages resolves each spine item into an image page in reading
-// order. A spine item without an image is skipped with a warning. The volume
-// must have at least one image page.
-func resolveEpubPages(files map[string]*zip.File, opfPath string, pkg epubPackage, logger log.Logger) ([]epubPage, []epubSpineDoc, error) {
+// order. A spine item without an image or with an encrypted(DRM-protected)
+// image is skipped with a warning. The volume must have at least one image
+// page.
+func resolveEpubPages(files map[string]*zip.File, opfPath string, pkg epubPackage, encrypted map[string]bool, logger log.Logger) ([]epubPage, []epubSpineDoc, SkippedPages, error) {
 	items := make(map[string]epubManifestItem, len(pkg.Manifest.Items))
 	for _, item := range pkg.Manifest.Items {
 		items[item.Id] = item
 	}
 
+	var skipped SkippedPages
 	pages := make([]epubPage, 0, len(pkg.Spine.ItemRefs))
 	spine := make([]epubSpineDoc, 0, len(pkg.Spine.ItemRefs))
 	for _, ref := range pkg.Spine.ItemRefs {
 		item, found := items[ref.IdRef]
 		if !found {
 			logger.Warn("Skipping page. The spine item is not found in the manifest -", "idref", ref.IdRef)
+			skipped.NoImage++
 			continue
 		}
 		if isNavItem(item) {
@@ -442,20 +537,31 @@ func resolveEpubPages(files map[string]*zip.File, opfPath string, pkg epubPackag
 
 		var page *epubPage
 		switch {
+		case encrypted[itemPath]:
+			logger.Warn("Skipping page. The page in the input epub file is encrypted(DRM-protected) -", "page", item.Href)
+			skipped.Encrypted++
 		case strings.HasPrefix(mediaType, "image/"):
 			// the spine item is the image itself
 			file, found := files[itemPath]
 			if !found {
 				logger.Warn("Skipping page. The image file is not found in the input epub file -", "page", item.Href)
+				skipped.NoImage++
 				break
 			}
 			page = &epubPage{zipPath: path.Clean(file.Name), mediaType: mediaType}
 		case isDocumentMediaType(mediaType):
-			if resolved, found := resolveEpubPage(files, itemPath, logger); found {
+			resolved, reason := resolveEpubPage(files, itemPath, encrypted, logger)
+			switch reason {
+			case epubNotSkipped:
 				page = &resolved
+			case epubSkipEncrypted:
+				skipped.Encrypted++
+			default:
+				skipped.NoImage++
 			}
 		default:
 			logger.Warn("Skipping page. The spine item is neither an image nor a document -", "page", item.Href, "media_type", item.MediaType)
+			skipped.NoImage++
 		}
 
 		doc := epubSpineDoc{path: itemPath}
@@ -467,18 +573,21 @@ func resolveEpubPages(files map[string]*zip.File, opfPath string, pkg epubPackag
 	}
 
 	if len(pages) == 0 {
-		return nil, nil, fmt.Errorf("input epub file has no image page. Only manga epub file(a volume of image pages) is supported")
+		if skipped.Encrypted > 0 {
+			return nil, nil, skipped, fmt.Errorf("input epub file is encrypted(DRM-protected) so its pages cannot be read. Only DRM-free epub file is supported")
+		}
+		return nil, nil, skipped, fmt.Errorf("input epub file has no image page. Only manga epub file(a volume of image pages) is supported")
 	}
-	return pages, spine, nil
+	return pages, spine, skipped, nil
 }
 
 // resolveEpubPage resolves a spine document into the image page it shows. If
 // the document shows more than one image, the largest image is used.
-func resolveEpubPage(files map[string]*zip.File, docPath string, logger log.Logger) (epubPage, bool) {
+func resolveEpubPage(files map[string]*zip.File, docPath string, encrypted map[string]bool, logger log.Logger) (epubPage, epubSkipReason) {
 	doc, found := files[docPath]
 	if !found {
 		logger.Warn("Skipping page. The page document is not found in the input epub file -", "page", docPath)
-		return epubPage{}, false
+		return epubPage{}, epubSkipNoImage
 	}
 
 	refs, err := findImageRefs(doc)
@@ -487,6 +596,7 @@ func resolveEpubPage(files map[string]*zip.File, docPath string, logger log.Logg
 		logger.Debug("Error while parsing the page document -", "page", docPath, "err", err)
 	}
 
+	hasEncryptedImage := false
 	candidates := make([]*zip.File, 0, len(refs))
 	seen := make(map[string]bool, len(refs))
 	for _, ref := range refs {
@@ -500,6 +610,12 @@ func resolveEpubPage(files map[string]*zip.File, docPath string, logger log.Logg
 		}
 		seen[imgPath] = true
 
+		if encrypted[imgPath] {
+			logger.Debug("Ignoring encrypted(DRM-protected) image in the page document -", "page", docPath, "image", imgPath)
+			hasEncryptedImage = true
+			continue
+		}
+
 		file, found := files[imgPath]
 		if !found {
 			logger.Debug("Ignoring image which is not found in the input epub file -", "page", docPath, "image", imgPath)
@@ -509,8 +625,12 @@ func resolveEpubPage(files map[string]*zip.File, docPath string, logger log.Logg
 	}
 
 	if len(candidates) == 0 {
+		if hasEncryptedImage {
+			logger.Warn("Skipping page. The image of the page in the input epub file is encrypted(DRM-protected) -", "page", docPath)
+			return epubPage{}, epubSkipEncrypted
+		}
 		logger.Warn("Skipping page. The page in the input epub file has no image -", "page", docPath)
-		return epubPage{}, false
+		return epubPage{}, epubSkipNoImage
 	}
 
 	largest := candidates[0]
@@ -526,7 +646,7 @@ func resolveEpubPage(files map[string]*zip.File, docPath string, logger log.Logg
 	return epubPage{
 		zipPath:   path.Clean(largest.Name),
 		mediaType: mediaTypeByExt(largest.Name),
-	}, true
+	}, epubNotSkipped
 }
 
 // findImageRefs finds all image references in the document
@@ -656,7 +776,7 @@ func newXmlDecoder(r io.Reader) *xml.Decoder {
 // readEpubToc reads the table of content of the input file. The epub3
 // navigation document is preferred over the epub2 ncx document. Each entry
 // points to the page number in the input file it lands on.
-func readEpubToc(files map[string]*zip.File, opfPath string, pkg epubPackage, spine []epubSpineDoc, logger log.Logger) []format.EpubTocEntry {
+func readEpubToc(files map[string]*zip.File, opfPath string, pkg epubPackage, spine []epubSpineDoc, encrypted map[string]bool, logger log.Logger) []format.EpubTocEntry {
 	// the page an entry lands on. an entry pointing to a page which is not an
 	// image page moves forward to the next image page
 	pageOf := func(basePath string, href string) int {
@@ -687,6 +807,10 @@ func readEpubToc(files map[string]*zip.File, opfPath string, pkg epubPackage, sp
 			}
 
 			tocPath := resolveHref(opfPath, item.Href)
+			if encrypted[tocPath] {
+				logger.Debug("Ignoring the encrypted(DRM-protected) table of content of the input epub file -", "path", tocPath)
+				continue
+			}
 			file, found := files[tocPath]
 			if !found {
 				continue
