@@ -54,9 +54,9 @@ func (s *pdfSource) PageCount() int {
 	return s.pageCount
 }
 
-// Skipped is always zero because every page in a pdf file is an image page
+// Skipped is always empty because every page in a pdf file is an image page
 func (s *pdfSource) Skipped() SkippedPages {
-	return SkippedPages{}
+	return nil
 }
 
 func (s *pdfSource) Metadata() SourceMetadata {

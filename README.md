@@ -83,6 +83,9 @@ Options:
   --right-to-left, --rtl
 	Right-to-left read direction (ex. Japanese manga). Unspecified means using the read direction in the input file if it has one
 
+  --skip-unreadable-page
+	Skip a page which cannot be read(no image or DRM-protected) instead of stopping. This affects epub input only
+
   --spread=true|false (default: true)
 	Enable/disable double-page spread detection and connection
 

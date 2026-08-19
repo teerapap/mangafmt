@@ -31,8 +31,8 @@ type InputSource interface {
 	// PageCount is the total number of pages in the input file.
 	PageCount() int
 
-	// Skipped is the number of pages in the input file which are skipped and
-	// left out of the page count.
+	// Skipped is the pages in the input file which are skipped and left out of
+	// the page count.
 	Skipped() SkippedPages
 
 	// Metadata is the volume information found in the input file. Its fields
@@ -43,11 +43,48 @@ type InputSource interface {
 	LoadImage(pageNo int, cfg Config, workDir string, logger log.Logger) (image.Image, error)
 }
 
-// SkippedPages is the number of pages in the input file which are skipped so
-// they are not in the output file
-type SkippedPages struct {
-	NoImage   int // the page has no image
-	Encrypted int // the page is encrypted(DRM-protected)
+// SkipReason tells why a page in the input file cannot be read
+type SkipReason int
+
+const (
+	NotSkipped SkipReason = iota
+	SkipNoImage
+	SkipEncrypted
+)
+
+// String is why the page cannot be read. It is a part of the error message. It
+// is empty when the page is not skipped.
+func (r SkipReason) String() string {
+	switch r {
+	case SkipNoImage:
+		return "it has no image"
+	case SkipEncrypted:
+		return "it is encrypted(DRM-protected)"
+	default:
+		return ""
+	}
+}
+
+// SkippedPage is a page in the input file which is skipped so it is not in the
+// output file
+type SkippedPage struct {
+	PageNo int        // the page number in the input file
+	Reason SkipReason // why the page cannot be read
+}
+
+// SkippedPages are the pages in the input file which are skipped so they are
+// not in the output file
+type SkippedPages []SkippedPage
+
+// Count is the number of the skipped pages with the reason
+func (s SkippedPages) Count(reason SkipReason) int {
+	count := 0
+	for _, skipped := range s {
+		if skipped.Reason == reason {
+			count++
+		}
+	}
+	return count
 }
 
 // SourceMetadata is the volume information read from the input file
@@ -68,13 +105,13 @@ func boolPtr(v bool) *bool {
 
 // openInputSource creates an [InputSource] for the input file. The input file
 // format is determined by its file extension.
-func openInputSource(path string, logger log.Logger) (InputSource, error) {
+func openInputSource(path string, cfg Config, logger log.Logger) (InputSource, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".pdf":
 		return newPdfSource(path, logger)
 	case ".epub", ".kepub":
-		return newEpubSource(path, logger)
+		return newEpubSource(path, cfg.SkipUnreadablePage, logger)
 	default:
 		return nil, fmt.Errorf("unsupported input file extension(%s). The supported extensions are .pdf, .epub and .kepub", ext)
 	}

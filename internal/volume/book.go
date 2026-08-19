@@ -38,11 +38,14 @@ type Config struct {
 	// IsRTLSet is true when the read direction is explicitly set by the user.
 	// It takes precedence over the read direction in the input file.
 	IsRTLSet bool
+	// SkipUnreadablePage is true when a page which cannot be read is skipped
+	// instead of stopping the formatting.
+	SkipUnreadablePage bool
 }
 
 func NewVolume(path string, info Info, cfg Config, logger log.Logger) (*Volume, error) {
 
-	source, err := openInputSource(path, logger)
+	source, err := openInputSource(path, cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -89,8 +92,8 @@ func (v *Volume) Metadata() SourceMetadata {
 	return v.source.Metadata()
 }
 
-// Skipped is the number of pages in the input file which are skipped so they
-// are not in the output file
+// Skipped is the pages in the input file which are skipped so they are not in
+// the output file
 func (v *Volume) Skipped() SkippedPages {
 	return v.source.Skipped()
 }
@@ -178,11 +181,11 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progr
 
 	skipped := v.Skipped()
 	doneArgs := []any{"total_input_pages", pr.PageCount(), "total_output_pages", len(outPages)}
-	if skipped.NoImage > 0 {
-		doneArgs = append(doneArgs, "skipped_no_image_pages", skipped.NoImage)
+	if noImage := skipped.Count(SkipNoImage); noImage > 0 {
+		doneArgs = append(doneArgs, "skipped_no_image_pages", noImage)
 	}
-	if skipped.Encrypted > 0 {
-		doneArgs = append(doneArgs, "skipped_encrypted_pages", skipped.Encrypted)
+	if encrypted := skipped.Count(SkipEncrypted); encrypted > 0 {
+		doneArgs = append(doneArgs, "skipped_encrypted_pages", encrypted)
 	}
 	logger.Info("Done formatting volume -", doneArgs...)
 

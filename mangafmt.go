@@ -90,6 +90,7 @@ func run() (ec int) {
 	flag.Float64Var(&volumeConfig.Density, "density", 300.0, "Output density (DPI). This affects pdf input only")
 	flag.BoolVar(&volumeConfig.IsRTL, "rtl", false, "Right-to-left read direction (ex. Japanese manga). Unspecified means using the read direction in the input file if it has one")
 	flag.BoolVar(&volumeConfig.IsRTL, "right-to-left", false, "Right-to-left read direction (ex. Japanese manga). Unspecified means using the read direction in the input file if it has one")
+	flag.BoolVar(&volumeConfig.SkipUnreadablePage, "skip-unreadable-page", false, "Skip a page which cannot be read(no image or DRM-protected) instead of stopping. This affects epub input only")
 	flag.BoolVar(&formatConfig.Trim.Enabled, "trim", true, "Enable/disable edge trimming")
 	flag.Float64Var(&formatConfig.Trim.FuzzP, "fuzz", 0.1, "Color fuzz (percentage)[0.0-1.0]")
 	flag.Float64Var(&formatConfig.Trim.MinSizeP, "trim-min-size", 0.85, "Minimum size after trimmed (percentage)[0.0-1.0]")
