@@ -10,7 +10,7 @@
 * Reduce file size by reducing colors to grayscale (except the cover page or configured otherwise).
 * Handle right-to-left (RTL) read direction.
 * Convert to EPUB/KEPUB/CBZ format.
-* Keep the metadata and the table of contents of the input file (EPUB input to EPUB/KEPUB output).
+* Keep the metadata, the table of contents and the landmarks of the input file (EPUB input to EPUB/KEPUB output).
 * Support Windows/OSX/Linux
 
 ### Supported Formats

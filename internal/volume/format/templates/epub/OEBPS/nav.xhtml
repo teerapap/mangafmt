@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"{{ with .Prefix }} epub:prefix="{{ . }}"{{ end }}>
     <head>
         <title>{{ .Title }}</title>
         <meta charset="utf-8"/>
@@ -14,6 +14,15 @@
                 <li><a href="{{ (index .Pages 0).Xhtml.Url }}">{{ .Title }}</a></li>
             </ol>
         </nav>
+        {{- with .Landmarks }}
+        <nav epub:type="landmarks" id="landmarks">
+            <ol>
+                {{- range . }}
+                <li><a epub:type="{{ .Type }}" href="{{ .Url }}">{{ .Label }}</a></li>
+                {{- end }}
+            </ol>
+        </nav>
+        {{- end }}
     </body>
 </html>
 {{- define "tocList" }}

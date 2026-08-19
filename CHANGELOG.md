@@ -8,13 +8,17 @@ Features:
   * Only manga epub file(a volume of image pages) is supported. A DRM-protected page or a page without an image cannot be read so it stops the formatting.
   * Support `--skip-unreadable-page` flag to skip the page which cannot be read and format the rest. The file is rejected when none of its pages can be read.
   * Neither ImageMagick nor VIPS is required for epub input.
-  * The metadata and the table of contents of the input file are kept in the epub/kepub output file.
+  * The metadata, the table of contents and the landmarks of the input file are kept in the epub/kepub output file.
+  * The vocabulary prefix of the input file is kept so that the metadata of a vocabulary which is not reserved(ex. iBooks) still resolves.
   * The read direction is read from the input file. The `--rtl` flag takes precedence over it.
   * The volume title and author are read from the input file. The `--title` and `--author` flags take precedence over them.
+
+* Mark the facing page each page of the epub/kepub output file is in, so that a reader in the two-page view pairs them the same way the volume does.
 
 Bug Fixes:
 
 * Stop before formatting when the output file is the same file as an input file, instead of overwriting the input file.
+* Remove the empty `properties` attribute from every spine item of the epub/kepub output file.
 
 ## v0.7.0 (2026-06-09)
 

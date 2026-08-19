@@ -150,7 +150,7 @@ func newEpubSource(filePath string, skipUnreadable bool, logger log.Logger) (*ep
 	logger.Debug("Resolved epub pages -", "total_pages", len(pages), "total_spine_items", len(pkg.Spine.ItemRefs))
 
 	metadata := readEpubMetadata(pkg, opfSrc, logger)
-	metadata.Epub.TableOfContents = readEpubToc(files, opfPath, pkg, spine, encrypted, logger)
+	metadata.Epub.TableOfContents, metadata.Epub.Landmarks = readEpubNavigation(files, opfPath, pkg, spine, encrypted, logger)
 
 	return &epubSource{
 		filepath: filePath,
@@ -785,10 +785,11 @@ func newXmlDecoder(r io.Reader) *xml.Decoder {
 	return decoder
 }
 
-// readEpubToc reads the table of content of the input file. The epub3
-// navigation document is preferred over the epub2 ncx document. Each entry
+// readEpubNavigation reads the table of content and the landmarks of the input
+// file. The epub3 navigation document is preferred over the epub2 ncx document
+// for the table of content and only the former has the landmarks. Each entry
 // points to the page number in the input file it lands on.
-func readEpubToc(files map[string]*zip.File, opfPath string, pkg epubPackage, spine []epubSpineDoc, encrypted map[string]bool, logger log.Logger) []format.EpubTocEntry {
+func readEpubNavigation(files map[string]*zip.File, opfPath string, pkg epubPackage, spine []epubSpineDoc, encrypted map[string]bool, logger log.Logger) ([]format.EpubTocEntry, []format.EpubLandmark) {
 	// the page an entry lands on. an entry pointing to a page which is not an
 	// image page moves forward to the next image page
 	pageOf := func(basePath string, href string) int {
@@ -810,6 +811,9 @@ func readEpubToc(files map[string]*zip.File, opfPath string, pkg epubPackage, sp
 		return 0
 	}
 
+	var toc []format.EpubTocEntry
+	var landmarks []format.EpubLandmark
+
 	// the epub3 navigation document is preferred over the epub2 ncx document
 	for _, wantNcx := range []bool{false, true} {
 		for _, item := range pkg.Manifest.Items {
@@ -818,40 +822,85 @@ func readEpubToc(files map[string]*zip.File, opfPath string, pkg epubPackage, sp
 				continue
 			}
 
-			tocPath := resolveHref(opfPath, item.Href)
-			if encrypted[tocPath] {
-				logger.Debug("Ignoring the encrypted(DRM-protected) table of content of the input epub file -", "path", tocPath)
+			navPath := resolveHref(opfPath, item.Href)
+			if encrypted[navPath] {
+				logger.Debug("Ignoring the encrypted(DRM-protected) navigation document of the input epub file -", "path", navPath)
 				continue
 			}
-			file, found := files[tocPath]
+			file, found := files[navPath]
 			if !found {
 				continue
 			}
 			src, err := readZipFile(file)
 			if err != nil {
-				logger.Debug("Cannot read the table of content of the input epub file -", "path", tocPath, "err", err)
+				logger.Debug("Cannot read the navigation document of the input epub file -", "path", navPath, "err", err)
 				continue
 			}
 
 			var root xmlNode
 			if err := unmarshalXml(src, &root); err != nil {
-				logger.Debug("Cannot parse the table of content of the input epub file -", "path", tocPath, "err", err)
+				logger.Debug("Cannot parse the navigation document of the input epub file -", "path", navPath, "err", err)
 				continue
 			}
 
-			var toc []format.EpubTocEntry
 			if isNcx {
-				toc = readNcxToc(root, tocPath, pageOf)
-			} else {
-				toc = readNavToc(root, tocPath, pageOf)
+				if len(toc) == 0 {
+					toc = readNcxToc(root, navPath, pageOf)
+				}
+				continue
 			}
-			if len(toc) > 0 {
-				logger.Debug("Found the table of content in the input epub file -", "path", tocPath, "entries", len(toc))
-				return toc
+			// only the epub3 navigation document has the landmarks
+			if len(landmarks) == 0 {
+				landmarks = readNavLandmarks(root, navPath, pageOf)
+			}
+			if len(toc) == 0 {
+				toc = readNavToc(root, navPath, pageOf)
 			}
 		}
 	}
-	return nil
+
+	if len(toc) > 0 {
+		logger.Debug("Found the table of content in the input epub file -", "entries", len(toc))
+	}
+	if len(landmarks) > 0 {
+		logger.Debug("Found the landmarks in the input epub file -", "entries", len(landmarks))
+	}
+	return toc, landmarks
+}
+
+// readNavLandmarks reads the landmarks from an epub3 navigation document. A
+// landmark which points to no page of the volume is left out.
+func readNavLandmarks(root xmlNode, navPath string, pageOf func(string, string) int) []format.EpubLandmark {
+	nav := root.findDescendant(func(n xmlNode) bool {
+		return strings.EqualFold(n.XMLName.Local, "nav") &&
+			strings.EqualFold(strings.TrimSpace(attrValue(n.Attrs, "type")), "landmarks")
+	})
+	if nav == nil {
+		return nil
+	}
+	list := nav.findChild("ol")
+	if list == nil {
+		return nil
+	}
+
+	landmarks := make([]format.EpubLandmark, 0, len(list.Children))
+	for _, item := range list.findChildren("li") {
+		link := item.findChild("a")
+		if link == nil {
+			continue
+		}
+		landmark := format.EpubLandmark{
+			Type:   strings.TrimSpace(attrValue(link.Attrs, "type")),
+			Label:  link.TextContent(),
+			PageNo: pageOf(navPath, attrValue(link.Attrs, "href")),
+		}
+		// a landmark is the type of a page so it is useless without either
+		if landmark.Type == "" || landmark.PageNo == 0 {
+			continue
+		}
+		landmarks = append(landmarks, landmark)
+	}
+	return landmarks
 }
 
 // readNavToc reads the table of content from an epub3 navigation document

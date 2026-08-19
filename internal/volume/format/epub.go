@@ -40,6 +40,8 @@ const (
 type EpubMetadata struct {
 	// TableOfContents is the table of content of the volume
 	TableOfContents []EpubTocEntry
+	// Landmarks is the structural pages of the volume
+	Landmarks []EpubLandmark
 	// Namespaces is the xml namespace declarations used by Entries
 	Namespaces string
 	// Prefix is the vocabulary prefix declaration used by the properties in
@@ -47,6 +49,16 @@ type EpubMetadata struct {
 	Prefix string
 	// Entries is the metadata elements of the volume in their original order
 	Entries []EpubMetadataEntry
+}
+
+// EpubLandmark is an entry in the landmarks of an epub volume. A reader uses
+// it to jump to a structural page of the volume such as the cover.
+type EpubLandmark struct {
+	// Type is the epub:type of the landmark(ex. cover)
+	Type  string
+	Label string
+	// PageNo is the page number(1-based) of the volume the landmark points to
+	PageNo int
 }
 
 // EpubTocEntry is an entry in the table of content of an epub volume
@@ -120,6 +132,14 @@ type EpubVolume struct {
 
 	TableOfContents      []EpubTocItem
 	TableOfContentsDepth int
+	Landmarks            []EpubLandmarkItem
+}
+
+// EpubLandmarkItem is a landmark of the output file
+type EpubLandmarkItem struct {
+	Type  string
+	Label string
+	Url   string
 }
 
 // EpubTocItem is an entry in the table of content of the output file
@@ -241,8 +261,26 @@ func createEpub(volume Volume, progress PackagingProgressFunc) (EpubVolume, erro
 	// the cover and the page urls are only known after the pages are created
 	epub.MetadataEntries = buildMetadataEntries(epub, volume.Epub.Entries)
 	epub.TableOfContents, epub.TableOfContentsDepth = buildTableOfContents(volume.Epub.TableOfContents, epub)
+	epub.Landmarks = buildLandmarks(volume.Epub.Landmarks, epub)
 
 	return epub, nil
+}
+
+// buildLandmarks builds the landmarks of the output file from the ones kept
+// from the input file
+func buildLandmarks(landmarks []EpubLandmark, epub EpubVolume) []EpubLandmarkItem {
+	items := make([]EpubLandmarkItem, 0, len(landmarks))
+	for _, landmark := range landmarks {
+		if landmark.PageNo < 1 || landmark.PageNo > len(epub.Pages) {
+			continue
+		}
+		items = append(items, EpubLandmarkItem{
+			Type:  html.EscapeString(landmark.Type),
+			Label: html.EscapeString(landmark.Label),
+			Url:   epub.Pages[landmark.PageNo-1].Xhtml.Url,
+		})
+	}
+	return items
 }
 
 // buildTableOfContents builds the table of content of the output file from the
