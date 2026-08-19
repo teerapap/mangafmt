@@ -177,8 +177,8 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progr
 		progress(v, float64(i-1)/float64(pr.PageCount()), pageNo-1)
 		logger.Debug("Done formatting page -", "next_input_page", pageNo, "next_output_page", len(outPages))
 	}
-	toc := v.remapToc(outPageOf, logger)
-	landmarks := v.remapLandmarks(outPageOf, logger)
+	toc := remapToc(v.Metadata().Epub.TableOfContents, outPageOf, logger)
+	landmarks := remapLandmarks(v.Metadata().Epub.Landmarks, outPageOf, logger)
 
 	skipped := v.Skipped()
 	doneArgs := []any{"total_input_pages", pr.PageCount(), "total_output_pages", len(outPages)}
@@ -205,68 +205,6 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progr
 		},
 		Pages: outPages,
 	}, nil
-}
-
-// remapToc moves the table of content of the input file onto the output pages.
-// An entry pointing to a page which is not in the output is removed from the
-// table.
-func (v *Volume) remapToc(outPageOf map[int]int, logger log.Logger) []format.EpubTocEntry {
-	if len(v.Metadata().Epub.TableOfContents) == 0 {
-		return nil
-	}
-
-	logger.Info("Remapping table of contents onto the output pages")
-	toc := remapTocEntries(v.Metadata().Epub.TableOfContents, outPageOf)
-	logger.Debug("Done remapping table of contents -", "entries", len(toc), "input_entries", len(v.Metadata().Epub.TableOfContents))
-	return toc
-}
-
-// remapLandmarks moves the landmarks of the input file onto the output pages.
-// A landmark pointing to a page which is not in the output is removed.
-func (v *Volume) remapLandmarks(outPageOf map[int]int, logger log.Logger) []format.EpubLandmark {
-	entries := v.Metadata().Epub.Landmarks
-	if len(entries) == 0 {
-		return nil
-	}
-
-	landmarks := make([]format.EpubLandmark, 0, len(entries))
-	for _, entry := range entries {
-		// two pages connected into one double-page spread land on the same
-		// output page
-		outPageNo, found := outPageOf[entry.PageNo]
-		if !found {
-			continue
-		}
-		entry.PageNo = outPageNo
-		landmarks = append(landmarks, entry)
-	}
-	logger.Debug("Done remapping landmarks -", "entries", len(landmarks), "input_entries", len(entries))
-	return landmarks
-}
-
-func remapTocEntries(entries []format.EpubTocEntry, outPageOf map[int]int) []format.EpubTocEntry {
-	remapped := make([]format.EpubTocEntry, 0, len(entries))
-	for _, entry := range entries {
-		mapped := format.EpubTocEntry{
-			Label:    entry.Label,
-			Children: remapTocEntries(entry.Children, outPageOf),
-		}
-
-		// two pages connected into one double-page spread land on the same
-		// output page
-		if outPageNo, found := outPageOf[entry.PageNo]; found {
-			mapped.PageNo = outPageNo
-		} else if len(mapped.Children) == 0 {
-			// the page of the entry is not in the output
-			continue
-		} else {
-			// keep the children by pointing the entry to its first child
-			mapped.PageNo = mapped.Children[0].PageNo
-		}
-
-		remapped = append(remapped, mapped)
-	}
-	return remapped
 }
 
 func (v *Volume) formatPage(pageNo int, pr PageRange, cfg FormatConfig, logger log.Logger) ([]format.Page, int, error) {
