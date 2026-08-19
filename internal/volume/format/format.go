@@ -27,6 +27,9 @@ type Page struct {
 	Filepath  string
 	MediaType string
 	Size      Size
+	// IsSpread is true when the page is a double-page spread connected from
+	// two facing pages. It takes both pages of the two-page view.
+	IsSpread bool
 }
 
 type Size struct {

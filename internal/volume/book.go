@@ -290,6 +290,7 @@ func (v *Volume) formatPage(pageNo int, pr PageRange, cfg FormatConfig, logger l
 			if err != nil {
 				return nil, 0, fmt.Errorf("formatting spread page: %w", err)
 			}
+			outPage.IsSpread = true
 			outPages = append(outPages, *outPage)
 		}
 	}

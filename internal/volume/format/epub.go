@@ -26,6 +26,15 @@ import (
 // declaration to keep
 const defaultEpubNamespaces = `xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf"`
 
+// the slot a page takes in the two-page view of the reader. page-spread-left
+// and page-spread-right are in the default vocabulary of a spine item but
+// page-spread-center is in the rendition vocabulary.
+const (
+	pageSpreadLeft   = "page-spread-left"
+	pageSpreadRight  = "page-spread-right"
+	pageSpreadCenter = "rendition:page-spread-center"
+)
+
 // EpubMetadata is the metadata of an epub volume. It is read from an epub
 // input file and it is only used when the output format is epub/kepub.
 type EpubMetadata struct {
@@ -177,6 +186,14 @@ func createEpub(volume Volume, progress PackagingProgressFunc) (EpubVolume, erro
 
 	pageCount := len(volume.Pages)
 	epub.Pages = make([]EpubPage, 0, pageCount)
+	// the slot each page takes in the two-page view of the reader. The reader
+	// turns to the right page first in the right-to-left read direction so the
+	// facing pair starts there.
+	leading, trailing := pageSpreadLeft, pageSpreadRight
+	if volume.IsRTL {
+		leading, trailing = pageSpreadRight, pageSpreadLeft
+	}
+	slot := leading
 	progress(0.0)
 	for i, page := range volume.Pages {
 		if i == 0 {
@@ -198,6 +215,19 @@ func createEpub(volume Volume, progress PackagingProgressFunc) (EpubVolume, erro
 		epubPage.Xhtml.Id = fmt.Sprintf("xhtml_%s", page.Id)
 		epubPage.Xhtml.Url = fmt.Sprintf("Text/%s.xhtml", page.Id)
 		epubPage.Xhtml.MediaType = "application/xhtml+xml"
+		// the cover and a connected double-page spread take both pages of the
+		// two-page view so the pair after them starts over
+		if i == 0 || page.IsSpread {
+			epubPage.Xhtml.Properties = pageSpreadCenter
+			slot = leading
+		} else {
+			epubPage.Xhtml.Properties = slot
+			if slot == leading {
+				slot = trailing
+			} else {
+				slot = leading
+			}
+		}
 
 		epubPage.Image = EpubPageItem{}
 		epubPage.Image.Id = fmt.Sprintf("img_%s", page.Id)

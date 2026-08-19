@@ -17,7 +17,7 @@
     </manifest>
     <spine page-progression-direction="{{if .IsRTL }}rtl{{else}}ltr{{end}}" toc="ncx">
         {{range .Pages}}
-        <itemref idref="{{ .Xhtml.Id }}" properties="{{ .Xhtml.Properties }}" />
+        <itemref idref="{{ .Xhtml.Id }}"{{ with .Xhtml.Properties }} properties="{{ . }}"{{ end }} />
         {{end}}
     </spine>
 </package>
