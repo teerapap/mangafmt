@@ -74,6 +74,9 @@ type epubRootfile struct {
 
 // epubPackage is the epub package document(.opf)
 type epubPackage struct {
+	// Prefix is the vocabulary prefix declaration. A metadata property of a
+	// vocabulary which is not reserved(ex. ibooks:) does not resolve without it.
+	Prefix   string `xml:"prefix,attr"`
 	Manifest struct {
 		Items []epubManifestItem `xml:"item"`
 	} `xml:"manifest"`
@@ -186,6 +189,8 @@ func readEpubMetadata(pkg epubPackage, opfSrc []byte, logger log.Logger) SourceM
 	case "ltr":
 		meta.IsRTL = boolPtr(false)
 	}
+
+	meta.Epub.Prefix = strings.TrimSpace(pkg.Prefix)
 
 	nsAttrs, entries, err := readOpfMetadataEntries(opfSrc)
 	if err != nil {

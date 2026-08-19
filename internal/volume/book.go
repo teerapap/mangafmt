@@ -198,6 +198,7 @@ func (v *Volume) Format(pr PageRange, cfg FormatConfig, logger log.Logger, progr
 		Epub: format.EpubMetadata{
 			TableOfContents: toc,
 			Namespaces:      v.Metadata().Epub.Namespaces,
+			Prefix:          v.Metadata().Epub.Prefix,
 			Entries:         v.Metadata().Epub.Entries,
 		},
 		Pages: outPages,

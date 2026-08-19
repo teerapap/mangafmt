@@ -33,6 +33,9 @@ type EpubMetadata struct {
 	TableOfContents []EpubTocEntry
 	// Namespaces is the xml namespace declarations used by Entries
 	Namespaces string
+	// Prefix is the vocabulary prefix declaration used by the properties in
+	// Entries. It is empty when the input file declares none.
+	Prefix string
 	// Entries is the metadata elements of the volume in their original order
 	Entries []EpubMetadataEntry
 }
@@ -101,6 +104,7 @@ type EpubVolume struct {
 	Creator          string
 	ModifiedDatetime string
 	Namespaces       string   // xml namespace declarations of the metadata element
+	Prefix           string   // vocabulary prefix declarations of the package element
 	MetadataEntries  []string // metadata entries kept from the input file
 	Cover            EpubPageItem
 	Pages            []EpubPage
@@ -167,6 +171,8 @@ func createEpub(volume Volume, progress PackagingProgressFunc) (EpubVolume, erro
 	if epub.Namespaces == "" {
 		epub.Namespaces = defaultEpubNamespaces
 	}
+	// the kept metadata entries use the vocabularies of the input file
+	epub.Prefix = html.EscapeString(strings.TrimSpace(volume.Epub.Prefix))
 	epub.ModifiedDatetime = time.Now().Format(time.RFC3339)
 
 	pageCount := len(volume.Pages)
