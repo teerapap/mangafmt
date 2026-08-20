@@ -1,6 +1,6 @@
 # CHANGELOG.md
 
-## Unreleased
+## v0.8.0 (2026-08-20)
 
 Features:
 
@@ -12,7 +12,6 @@ Features:
   * The vocabulary prefix of the input file is kept so that the metadata of a vocabulary which is not reserved(ex. iBooks) still resolves.
   * The read direction is read from the input file. The `--rtl` flag takes precedence over it.
   * The volume title and author are read from the input file. The `--title` and `--author` flags take precedence over them.
-
 * Mark the facing page each page of the epub/kepub output file is in, so that a reader in the two-page view pairs them the same way the volume does.
 
 Bug Fixes:

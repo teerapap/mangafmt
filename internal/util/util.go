@@ -22,7 +22,7 @@ import (
 	"github.com/teerapap/mangafmt/internal/log"
 )
 
-const AppVersion = "v0.7.0"
+const AppVersion = "v0.8.0"
 
 func PrintFlagsUsage(output io.Writer) {
 	type flagHelp struct {
